@@ -64,6 +64,32 @@ foreach ($k in 'HKLM:\SOFTWARE\Policies\Microsoft\Edge', 'HKLM:\SOFTWARE\Policie
   }
 }
 
+# ---------- 0. E2E 專用版:App 自己開 DevTools 埠 ----------
+# CI 以 `tauri build --config` 覆寫主視窗 additionalBrowserArgs(加 --remote-debugging-port)另建一份不發佈的
+# 安裝檔,由宿主程式自己把參數交給 WebView2(runtime 唯一接受的方式),再讓 msedgedriver 以 debuggerAddress 附加。
+if ($env:KEFU_E2E_BUILTIN_PORT) {
+  $port = [int]$env:KEFU_E2E_BUILTIN_PORT
+  Reset-AppData
+  Note "模式 0:E2E 專用版(App 自開埠 $port),直接附加"
+  $app = Start-Process -FilePath $env:KEFU_EXE -PassThru `
+    -RedirectStandardOutput (Join-Path $out 'kefu-builtin.stdout.log') `
+    -RedirectStandardError (Join-Path $out 'kefu-builtin.stderr.log')
+  if (-not (Test-DevTools $port)) {
+    Note "結果:模式 0 的 DevTools 埠 $port 沒有開(E2E 專用版的 additionalBrowserArgs 未生效)"
+    Stop-Kefu
+    exit 1
+  }
+  $ed = Start-Process -FilePath $env:MSEDGEDRIVER `
+    -ArgumentList '--port=9515', '--verbose', "--log-path=$(Join-Path $out 'msedgedriver.log')" -PassThru
+  Start-Sleep -Seconds 3
+  $env:DEBUGGER_ADDRESS = "127.0.0.1:$port"
+  $rc = Run-Login 'attach' 'http://127.0.0.1:9515/'
+  Note "結果:模式 0 exit=$rc"
+  Stop-Process -Id $ed.Id -Force -ErrorAction SilentlyContinue
+  Stop-Kefu
+  exit $rc
+}
+
 # ---------- 1. tauri-driver ----------
 Note "模式 1:tauri-driver"
 $td = Start-Process -FilePath $tauriDriver -ArgumentList '--port', '4444', '--native-driver', $env:MSEDGEDRIVER -PassThru `

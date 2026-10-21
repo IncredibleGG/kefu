@@ -245,15 +245,17 @@ jobs:
 
   e2e-windows:
     name: e2e (windows login)
-    needs: build
+    # 自行建置 E2E 專用版(不用正式安裝檔),故不必等 build job
     if: ${{ !cancelled() }}
     runs-on: windows-latest
     continue-on-error: true
-    timeout-minutes: 30
+    timeout-minutes: 50
     env:
       E2E_SERVER: ${{ secrets.E2E_SERVER }}
       E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      # run-windows.ps1 模式 0:E2E 專用版自開此埠,直接附加(不走 tauri-driver)
+      KEFU_E2E_BUILTIN_PORT: '9222'
     steps:
       - name: 檢查 E2E secrets
         id: cfg
@@ -268,37 +270,57 @@ jobs:
 
       - uses: actions/checkout@v7
         if: steps.cfg.outputs.ok == 'true'
-        with:
-          sparse-checkout: e2e
-
-      - uses: actions/download-artifact@v8
-        if: steps.cfg.outputs.ok == 'true'
-        with:
-          name: kefu-desktop-windows-x64
-          path: pkg
 
       - uses: actions/setup-node@v7
         if: steps.cfg.outputs.ok == 'true'
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: e2e/desktop/package-lock.json
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.cfg.outputs.ok == 'true'
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          workspaces: 'frontend/src-tauri -> target'
+          key: e2e-windows
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: npm ci(frontend)
+        if: steps.cfg.outputs.ok == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      # WebView2 Runtime 只接受「宿主程式自己」傳入的瀏覽器參數(環境變數 / 登錄覆寫一律無效,
+      # 見 e2e/README.md),所以另建一份不發佈的 E2E 專用版:以 --config 覆寫主視窗 additionalBrowserArgs
+      # 開 DevTools 埠 9222。覆寫會取代 wry 預設參數,故保留預設的三個 --disable-features。
+      - name: 建置 E2E 專用版(App 自開 DevTools 埠;僅供 CI,不發佈)
+        if: steps.cfg.outputs.ok == 'true'
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const c = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+            const args = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9222";
+            const windows = c.app.windows.map((w, i) => (i === 0 ? { ...w, additionalBrowserArgs: args } : w));
+            fs.writeFileSync("src-tauri/tauri.e2e.conf.json", JSON.stringify({ app: { windows } }, null, 1));
+          '
+          npx tauri build --bundles nsis --config src-tauri/tauri.e2e.conf.json
+          mkdir -p ../pkg
+          cp src-tauri/target/release/bundle/nsis/*-setup.exe ../pkg/
+          ls -la ../pkg
 
       - name: npm ci(selenium-webdriver)
         if: steps.cfg.outputs.ok == 'true'
         working-directory: e2e/desktop
         run: npm ci
 
-      - uses: actions/cache@v6
-        if: steps.cfg.outputs.ok == 'true'
-        id: tauri-driver-cache
-        with:
-          path: ~/.cargo/bin/tauri-driver.exe
-          key: tauri-driver-${{ runner.os }}-v1
-
-      - name: 安裝 tauri-driver
-        if: steps.cfg.outputs.ok == 'true' && steps.tauri-driver-cache.outputs.cache-hit != 'true'
-        run: cargo install tauri-driver --locked
 
       - name: 靜默安裝 NSIS、準備對應 WebView2 版本的 msedgedriver
         if: steps.cfg.outputs.ok == 'true'

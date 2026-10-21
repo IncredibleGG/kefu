@@ -189,6 +189,16 @@ jobs:
           fi
           EOF
 
+      # 快取模擬器系統映像與 AVD:runner 每次重新下載約 1GB 的系統映像,曾遇 Google 下載伺服器回損壞
+      # 檔案("Error on ZipFile unknown archive")而無法開機;命中快取時 sdkmanager 視為已安裝、不再下載
+      - uses: actions/cache@v6
+        with:
+          path: |
+            /usr/local/lib/android/sdk/system-images/android-34/google_apis/x86_64
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api34-google_apis-x86_64-v1
+
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
@@ -287,6 +297,16 @@ jobs:
           # 跑 e2e/maestro/login.yaml,失敗會重跑一次(模擬器偶發 Device server died);截圖收在 screenshots/
           E2E_PLATFORM=android bash "$GITHUB_WORKSPACE/e2e/maestro/run.sh" "$out"
           SH
+
+      # 快取模擬器系統映像與 AVD:runner 每次重新下載約 1GB 的系統映像,曾遇 Google 下載伺服器回損壞
+      # 檔案("Error on ZipFile unknown archive")而無法開機;命中快取時 sdkmanager 視為已安裝、不再下載
+      - uses: actions/cache@v6
+        with:
+          path: |
+            /usr/local/lib/android/sdk/system-images/android-34/google_apis/x86_64
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api34-google_apis-x86_64-v1
 
       - uses: reactivecircus/android-emulator-runner@v2
         if: steps.cfg.outputs.ok == 'true'

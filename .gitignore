@@ -39,3 +39,6 @@ GoogleService-Info.plist
 .DS_Store
 *.log
 .idea/
+
+# CI 產生的 E2E 專用 Tauri 覆寫設定(不入庫)
+frontend/src-tauri/tauri.e2e.conf.json
