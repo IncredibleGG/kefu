@@ -367,7 +367,7 @@ jobs:
           $procLog = Join-Path $out 'processes.log'
           $watch = Start-Job -ArgumentList $procLog -ScriptBlock {
             param($f)
-            for ($i = 0; $i -lt 36; $i++) {
+            for ($i = 0; $i -lt 60; $i++) {
               "---- $(Get-Date -Format o)" | Out-File $f -Append -Encoding utf8
               Get-CimInstance Win32_Process |
                 Where-Object { $_.Name -match 'kefu|msedgewebview2|msedgedriver|tauri-driver' } |
@@ -377,28 +377,9 @@ jobs:
             }
           }
 
-          $td = Start-Process -FilePath (Join-Path $env:USERPROFILE '.cargo\bin\tauri-driver.exe') `
-            -ArgumentList '--port', '4444', '--native-driver', $env:MSEDGEDRIVER -PassThru `
-            -RedirectStandardOutput (Join-Path $out 'tauri-driver.stdout.log') `
-            -RedirectStandardError (Join-Path $out 'tauri-driver.stderr.log')
-          Start-Sleep -Seconds 3
-          node e2e/desktop/login.mjs 2>&1 | Tee-Object -FilePath (Join-Path $out 'test.log')
+          # tauri-driver 優先;建不起 session 時改用附加模式(說明見腳本開頭與 e2e/README.md)
+          & e2e/desktop/run-windows.ps1
           $rc = $LASTEXITCODE
-          Stop-Process -Id $td.Id -Force -ErrorAction SilentlyContinue
-          Get-Process kefu, msedgedriver -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
-          if ($rc -ne 0 -and -not (Test-Path (Join-Path $out '01-setup.png'))) {
-            # 連 session 都建不起來時:不經 tauri-driver,直接對 msedgedriver(verbose 記錄)再試一次,方便判讀原因
-            "==== 直接使用 msedgedriver 重試 ====" | Tee-Object -FilePath (Join-Path $out 'test.log') -Append
-            $ed = Start-Process -FilePath $env:MSEDGEDRIVER `
-              -ArgumentList '--port=9515', '--verbose', "--log-path=$(Join-Path $out 'msedgedriver.log')" -PassThru
-            Start-Sleep -Seconds 3
-            $env:WEBDRIVER_MODE = 'edgedriver'
-            $env:WEBDRIVER_URL = 'http://127.0.0.1:9515/'
-            node e2e/desktop/login.mjs 2>&1 | Tee-Object -FilePath (Join-Path $out 'test.log') -Append
-            $rc = $LASTEXITCODE
-            Stop-Process -Id $ed.Id -Force -ErrorAction SilentlyContinue
-          }
 
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing

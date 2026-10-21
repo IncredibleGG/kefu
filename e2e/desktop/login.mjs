@@ -66,7 +66,12 @@ async function pathname(driver) {
 async function main() {
   await mkdir(out, { recursive: true });
   const caps = new Capabilities();
-  if (process.env.WEBDRIVER_MODE === "edgedriver") {
+  if (process.env.WEBDRIVER_MODE === "attach") {
+    // 附加到已啟動、開了 --remote-debugging-port 的 kefu.exe(WebView2),由 msedgedriver 直接驅動
+    caps.setBrowserName("webview2");
+    caps.set("ms:edgeChromium", true);
+    caps.set("ms:edgeOptions", { debuggerAddress: process.env.DEBUGGER_ADDRESS || "127.0.0.1:9222" });
+  } else if (process.env.WEBDRIVER_MODE === "edgedriver") {
     // 診斷用:不經 tauri-driver,直接對 msedgedriver 下 WebView2 capabilities
     caps.setBrowserName("webview2");
     caps.set("ms:edgeChromium", true);
