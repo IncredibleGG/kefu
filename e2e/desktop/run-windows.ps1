@@ -46,6 +46,19 @@ function Run-Login($mode, $url) {
   return $LASTEXITCODE
 }
 
+# ---------- 診斷:WebView2 / Edge 相關原則與權限 ----------
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+Note "目前身分:$([Security.Principal.WindowsIdentity]::GetCurrent().Name) 管理員=$isAdmin"
+foreach ($k in 'HKLM:\SOFTWARE\Policies\Microsoft\Edge', 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2',
+               'HKCU:\Software\Policies\Microsoft\Edge', 'HKCU:\Software\Policies\Microsoft\Edge\WebView2',
+               'HKLM:\SOFTWARE\Policies\Microsoft\EdgeUpdate') {
+  if (Test-Path $k) {
+    Note "原則 $k"
+    Get-ChildItem $k -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Note "  子鍵 $($_.Name)" }
+    (Get-ItemProperty $k -ErrorAction SilentlyContinue | Out-String).Trim() -split "`n" | ForEach-Object { Note "  $_" }
+  }
+}
+
 # ---------- 1. tauri-driver ----------
 Note "模式 1:tauri-driver"
 $td = Start-Process -FilePath $tauriDriver -ArgumentList '--port', '4444', '--native-driver', $env:MSEDGEDRIVER -PassThru `
@@ -62,19 +75,25 @@ if (Test-Path (Join-Path $out '01-setup.png')) { Note "結果:tauri-driver 模�
 $port = 9222
 $regPath = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
 $attached = $false
-foreach ($how in 'env', 'registry') {
+foreach ($how in 'env', 'env-basicuser', 'registry') {
   Reset-AppData
   Note "模式 2:附加($how)"
-  if ($how -eq 'env') {
-    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$port"
+  if ($how -like 'env*') {
+    # --lang 作為對照:看環境變數的參數是否有出現在 WebView2 browser 行程的命令列
+    $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$port --lang=fr-FR"
   } else {
     Remove-Item Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
     New-Item -Path $regPath -Force | Out-Null
     New-ItemProperty -Path $regPath -Name 'kefu.exe' -Value "--remote-debugging-port=$port" -PropertyType String -Force | Out-Null
   }
-  $app = Start-Process -FilePath $env:KEFU_EXE -PassThru `
-    -RedirectStandardOutput (Join-Path $out "kefu-$how.stdout.log") `
-    -RedirectStandardError (Join-Path $out "kefu-$how.stderr.log")
+  if ($how -eq 'env-basicuser') {
+    # 以非提升權限(Basic User 信任等級)啟動,排除「管理員行程忽略覆寫參數」的可能
+    Start-Process -FilePath 'runas.exe' -ArgumentList '/trustlevel:0x20000', "`"$env:KEFU_EXE`"" -WindowStyle Hidden
+  } else {
+    $app = Start-Process -FilePath $env:KEFU_EXE -PassThru `
+      -RedirectStandardOutput (Join-Path $out "kefu-$how.stdout.log") `
+      -RedirectStandardError (Join-Path $out "kefu-$how.stderr.log")
+  }
   if (Test-DevTools $port) { $attached = $true; break }
   Note "附加($how):DevTools 埠沒有開"
   Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'msedgewebview2' -and $_.CommandLine -notmatch '--type=' } |
