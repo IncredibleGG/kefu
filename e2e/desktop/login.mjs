@@ -66,9 +66,16 @@ async function pathname(driver) {
 async function main() {
   await mkdir(out, { recursive: true });
   const caps = new Capabilities();
-  caps.setBrowserName("wry");
-  caps.set("tauri:options", { application: exe });
-  log("啟動", exe);
+  if (process.env.WEBDRIVER_MODE === "edgedriver") {
+    // 診斷用:不經 tauri-driver,直接對 msedgedriver 下 WebView2 capabilities
+    caps.setBrowserName("webview2");
+    caps.set("ms:edgeChromium", true);
+    caps.set("ms:edgeOptions", { binary: exe, args: [], webviewOptions: {} });
+  } else {
+    caps.setBrowserName("wry");
+    caps.set("tauri:options", { application: exe });
+  }
+  log("啟動", exe, "via", webdriverUrl);
   const driver = await new Builder().withCapabilities(caps).usingServer(webdriverUrl).build();
   let step = "init";
   try {

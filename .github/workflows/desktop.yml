@@ -362,14 +362,44 @@ jobs:
         shell: pwsh
         run: |
           $out = Join-Path $env:GITHUB_WORKSPACE 'e2e-out'
+          $env:E2E_OUT = $out
+          # 診斷:啟動期間每 5 秒記錄 kefu / WebView2 行程與命令列(看 remote-debugging 與 user-data-dir 參數)
+          $procLog = Join-Path $out 'processes.log'
+          $watch = Start-Job -ArgumentList $procLog -ScriptBlock {
+            param($f)
+            for ($i = 0; $i -lt 36; $i++) {
+              "---- $(Get-Date -Format o)" | Out-File $f -Append -Encoding utf8
+              Get-CimInstance Win32_Process |
+                Where-Object { $_.Name -match 'kefu|msedgewebview2|msedgedriver|tauri-driver' } |
+                ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.Name) :: $($_.CommandLine)" } |
+                Out-File $f -Append -Encoding utf8
+              Start-Sleep -Seconds 5
+            }
+          }
+
           $td = Start-Process -FilePath (Join-Path $env:USERPROFILE '.cargo\bin\tauri-driver.exe') `
             -ArgumentList '--port', '4444', '--native-driver', $env:MSEDGEDRIVER -PassThru `
             -RedirectStandardOutput (Join-Path $out 'tauri-driver.stdout.log') `
             -RedirectStandardError (Join-Path $out 'tauri-driver.stderr.log')
           Start-Sleep -Seconds 3
-          $env:E2E_OUT = $out
           node e2e/desktop/login.mjs 2>&1 | Tee-Object -FilePath (Join-Path $out 'test.log')
           $rc = $LASTEXITCODE
+          Stop-Process -Id $td.Id -Force -ErrorAction SilentlyContinue
+          Get-Process kefu, msedgedriver -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+          if ($rc -ne 0 -and -not (Test-Path (Join-Path $out '01-setup.png'))) {
+            # 連 session 都建不起來時:不經 tauri-driver,直接對 msedgedriver(verbose 記錄)再試一次,方便判讀原因
+            "==== 直接使用 msedgedriver 重試 ====" | Tee-Object -FilePath (Join-Path $out 'test.log') -Append
+            $ed = Start-Process -FilePath $env:MSEDGEDRIVER `
+              -ArgumentList '--port=9515', '--verbose', "--log-path=$(Join-Path $out 'msedgedriver.log')" -PassThru
+            Start-Sleep -Seconds 3
+            $env:WEBDRIVER_MODE = 'edgedriver'
+            $env:WEBDRIVER_URL = 'http://127.0.0.1:9515/'
+            node e2e/desktop/login.mjs 2>&1 | Tee-Object -FilePath (Join-Path $out 'test.log') -Append
+            $rc = $LASTEXITCODE
+            Stop-Process -Id $ed.Id -Force -ErrorAction SilentlyContinue
+          }
+
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
           $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
@@ -378,12 +408,16 @@ jobs:
           $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
           $bmp.Save((Join-Path $out 'desktop-final.png'), [System.Drawing.Imaging.ImageFormat]::Png)
           $g.Dispose(); $bmp.Dispose()
-          Stop-Process -Id $td.Id -Force -ErrorAction SilentlyContinue
+          Stop-Job $watch -ErrorAction SilentlyContinue
           Get-Process kefu, msedgedriver -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-ChildItem (Join-Path $env:LOCALAPPDATA 'cc.kf56k.kefu') -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+            Select-Object FullName | Out-File (Join-Path $out 'webview-data-dir.txt') -Encoding utf8
           exit $rc
 
       - name: 遮蔽記錄裡的帳密
         if: always() && steps.cfg.outputs.ok == 'true'
+        env:
+          PYTHONUTF8: '1'
         run: python e2e/scripts/redact.py e2e-out
 
       - uses: actions/upload-artifact@v7
