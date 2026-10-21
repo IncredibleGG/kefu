@@ -2,7 +2,7 @@
 """把 E2E 產物目錄裡所有文字檔中的帳密換成 ***(上傳 artifact 前執行)。
 
 用法:python3 e2e/scripts/redact.py <目錄>
-讀環境變數 E2E_EMAIL、E2E_PASSWORD;同時處理 JSON 跳脫與 URL 編碼後的寫法。
+讀環境變數 E2E_EMAIL、E2E_PASSWORD;同時處理 JSON 跳脫、URL 編碼,以及輸入到一半留下的前綴。
 二進位檔(png、mp4 等)略過;密碼框在截圖裡本來就是遮罩。
 """
 import json
@@ -14,7 +14,12 @@ TEXT_EXT = {".txt", ".log", ".json", ".xml", ".html", ".yaml", ".yml", ".csv", "
 
 
 def variants(secret: str) -> list[str]:
-    out = {secret, json.dumps(secret)[1:-1], urllib.parse.quote(secret, safe=""), urllib.parse.quote_plus(secret)}
+    out = set()
+    # 輸入到一半就失敗時,元件樹 / 記錄裡會留下「前半段」;夠長的前綴一併遮蔽
+    min_prefix = max(6, (len(secret) + 1) // 2)
+    for n in range(min(len(secret), min_prefix), len(secret) + 1):
+        p = secret[:n]
+        out |= {p, json.dumps(p)[1:-1], urllib.parse.quote(p, safe=""), urllib.parse.quote_plus(p)}
     return sorted((v for v in out if v), key=len, reverse=True)
 
 
