@@ -360,7 +360,7 @@ async def add_message(
     )
 
     # 自動化事件:訪客訊息(僅 visitor;emit 失敗不影響寫訊)。
-    # 注意:auto_reply 動作走 channel_out 不經 add_message,不會再觸發本事件成環。
+    # 注意:auto_reply 動作以 sender_type="ai" 經 add_message 落庫,不符本條件,不會再觸發本事件成環。
     if sender_type == "visitor":
         await _emit_automation(
             db,

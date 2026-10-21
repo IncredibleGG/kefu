@@ -403,16 +403,47 @@ async def test_bad_action_degrades_not_raise(db):
 
 @pytest.mark.asyncio
 async def test_auto_reply_uses_channel_out_without_recursion(db, monkeypatch):
-    """auto_reply 走 channel_out.send_to_visitor(不經 add_message),不新增訊息、不成環。"""
+    """auto_reply:add_message(sender_type="ai")落庫並發 message.new(web widget 由此收到),
+    再經 channel_out.send_to_visitor 對外渠道送出(web 為 no-op,不重複)。
+
+    防遞迴:add_message 的自動化 hook 只對 sender_type=="visitor" 觸發,ai 訊息不會再
+    觸發 message.visitor → 只新增恰一則訊息、emit_event 不重入。
+    """
     w = await _seed(db)
     calls: list[tuple] = []
 
     async def _fake_send(db_, tenant_id, session_id, text, content_type="text"):
         calls.append((str(session_id), text, content_type))
 
-    from app.services import channel_out
+    from app.services import channel_out, realtime, webhooks
 
     monkeypatch.setattr(channel_out, "send_to_visitor", _fake_send)
+
+    # realtime / webhook 以假物件取代(不依賴 Redis、SQLite 無 webhook 表)
+    published: list[dict] = []
+
+    async def _fake_publish(tenant_id, session_id, event):
+        published.append(event)
+
+    async def _fake_publish_agents(tenant_id, event):
+        return None
+
+    async def _fake_deliver(db_, tenant_id, event, payload):
+        return None
+
+    monkeypatch.setattr(realtime, "publish", _fake_publish)
+    monkeypatch.setattr(realtime, "publish_agents", _fake_publish_agents)
+    monkeypatch.setattr(webhooks, "deliver_event", _fake_deliver)
+
+    # 記錄 emit_event 呼叫:若自動回覆的訊息再觸發 message.visitor,這裡會出現重入
+    emitted: list[str] = []
+    orig_emit = svc.emit_event
+
+    async def _spy_emit(db_, tenant_id, event, context):
+        emitted.append(event)
+        await orig_emit(db_, tenant_id, event, context)
+
+    monkeypatch.setattr(svc, "emit_event", _spy_emit)
 
     await _add_rule(
         db, w, event="message.visitor",
@@ -422,16 +453,25 @@ async def test_auto_reply_uses_channel_out_without_recursion(db, monkeypatch):
 
     await svc.emit_event(db, w.tenant_id, "message.visitor", _ctx(w, content="哈囉"))
 
+    # 對外渠道出站恰一次
     assert len(calls) == 1
     assert calls[0][0] == str(w.session_id)
     assert "專員" in calls[0][1]
-    # 未經 add_message → 不應新增任何 message(不成環)
-    msg_count = (
-        await db.execute(
-            select(func.count()).select_from(Message).where(Message.session_id == w.session_id)
-        )
-    ).scalar_one()
-    assert msg_count == 0
+    # 落庫恰一則 ai 訊息(不成環 → 不會重複新增)
+    msgs = (
+        await db.execute(select(Message).where(Message.session_id == w.session_id))
+    ).scalars().all()
+    assert len(msgs) == 1
+    assert msgs[0].sender_type == "ai"
+    assert msgs[0].content == "感謝您的來訊,專員將盡快回覆。"
+    assert msgs[0].meta == {"source": "automation"}
+    # web widget 經 message.new 收到恰一則(帶 message_id 供去重)
+    new_events = [e for e in published if e["type"] == "message.new"]
+    assert len(new_events) == 1
+    assert new_events[0]["payload"]["sender_type"] == "ai"
+    assert new_events[0]["payload"]["message_id"] == str(msgs[0].id)
+    # emit_event 未被 ai 訊息重入
+    assert emitted == ["message.visitor"]
 
 
 @pytest.mark.asyncio

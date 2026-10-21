@@ -2,7 +2,7 @@
 
 本檔提供兩個方向的核心能力:
 1. 出站 seam `send_to_visitor`:dispatch/坐席台呼叫,依 session→channel.type 選 adapter
-   把訊息送回訪客(web=realtime.publish 推 widget;telegram=Bot API sendMessage)。
+   把訊息送回訪客(web=no-op,widget 由 add_message 的 message.new 收到;telegram=Bot API sendMessage)。
 2. 入站標準流程 `ingest_inbound`:webhook / widget 收到訪客訊息後的歸一化管線
    (get_or_create_visitor → get_or_open_session → add_message → dispatch.handle_inbound)。
 

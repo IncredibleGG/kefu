@@ -18,8 +18,9 @@
   動作失敗只記錄、不影響其餘規則與主流程(呼叫端交易照常提交)。
 - **不自行 commit**:動作對 session 的變更與新增的 TagRelation 皆併入呼叫端交易,
   由呼叫端 commit(與 add_message 一致的作法)。
-- **防遞迴**:auto_reply 一律走 channel_out.send_to_visitor,**不經 add_message**,
-  因此不會再觸發 message 事件,避免規則自我觸發成環。
+- **防遞迴**:auto_reply 以 add_message(sender_type="ai")落庫並推播,再經
+  channel_out.send_to_visitor 對外送出;add_message 的自動化 hook 只對 visitor 觸發,
+  因此不會再觸發 message.visitor 事件,避免規則自我觸發成環。
 - **跨模組延遲 import**:channel_out / realtime / tag 等在動作內才 import,
   他模組缺席時該動作降級略過,不拖垮引擎。
 - **效能**:無命中規則時提早返回(不載入 session / channel),避免熱路徑額外查詢。

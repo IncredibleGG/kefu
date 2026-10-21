@@ -2,7 +2,7 @@
 
 - Telegram Bot API client:以 httpx.MockTransport 攔截,驗請求構造與錯誤處理。
 - webhook 歸一化與 secret 驗證、群組過濾。
-- send_to_visitor adapter 選擇(web=publish / telegram=sendMessage / email=stub)。
+- send_to_visitor adapter 選擇(web=no-op 不重發 / telegram=sendMessage / email=stub)。
 - ingest_inbound 標準入站流程與 seam 降級。
 - API:Telegram webhook secret 驗證、web widget 送訊(以 ASGITransport + 依賴覆寫)。
 """
@@ -183,7 +183,13 @@ def test_ignore_bot_and_group():
 # send_to_visitor adapter 選擇
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
-async def test_send_to_visitor_web_calls_publish(monkeypatch):
+async def test_send_to_visitor_web_does_not_republish(monkeypatch):
+    """web 走 _send_web,且不再自行 publish。
+
+    web widget 已由 add_message 落庫時對會話頻道發佈的 ``message.new``(帶 message_id)
+    收到訊息;所有 send_to_visitor 呼叫端(坐席送訊 / 附件 / dispatch AI 回覆 / 自動回覆)
+    都先 add_message 再出站。此處若再 publish(無 message_id,widget 無法去重)會造成重複氣泡。
+    """
     tid, sid = uuid.uuid4(), uuid.uuid4()
     monkeypatch.setattr(
         channel_out, "_load_delivery_context",
@@ -194,13 +200,30 @@ async def test_send_to_visitor_web_calls_publish(monkeypatch):
     async def fake_publish(tenant_id, session_id, event):
         published.append((tenant_id, session_id, event))
 
+    async def fake_publish_agents(tenant_id, event):
+        published.append((tenant_id, None, event))
+
+    from app.services import realtime
+
+    # 不論經 seam 解析或直接 import realtime,都攔得到
+    monkeypatch.setattr(realtime, "publish", fake_publish)
+    monkeypatch.setattr(realtime, "publish_agents", fake_publish_agents)
     monkeypatch.setattr(
         channel_out, "_resolve_seam",
         lambda m, a: fake_publish if (m, a) == ("app.services.realtime", "publish") else None,
     )
+    web_calls = []
+    orig_send_web = channel_out._send_web
+
+    async def spy_send_web(*args, **kw):
+        web_calls.append(args)
+        return await orig_send_web(*args, **kw)
+
+    monkeypatch.setattr(channel_out, "_send_web", spy_send_web)
+
     await channel_out.send_to_visitor(None, tid, sid, "回覆內容")
-    assert len(published) == 1
-    assert published[0][2]["payload"]["content"] == "回覆內容"
+    assert web_calls == [(tid, sid, "回覆內容", "text")]  # adapter 選擇正確
+    assert published == []  # 不重發 → widget 不會收到重複訊息
 
 
 @pytest.mark.asyncio
@@ -252,9 +275,13 @@ def _fake_ctx_loader(ctype, cfg, external_id):
 class _FakeDb:
     def __init__(self):
         self.committed = 0
+        self.rolled_back = 0
 
     async def commit(self):
         self.committed += 1
+
+    async def rollback(self):
+        self.rolled_back += 1
 
 
 def _seam_registry(recorder, *, with_dispatch=True, dispatch_raises=False):
@@ -298,7 +325,10 @@ async def test_ingest_inbound_happy_path(monkeypatch):
     kinds = [r[0] for r in rec]
     assert kinds == ["visitor", "session", "message", "dispatch"]  # 順序正確
     assert ("message", "visitor", "你好", "text") in rec
-    assert db.committed == 1
+    # 兩段提交:訪客訊息落地後先 commit(dispatch 失敗也不遺失),
+    # dispatch 寫入 AI 回覆(僅 flush)後再 commit(否則請求結束時被回滾)。
+    assert db.committed == 2
+    assert db.rolled_back == 0
 
 
 @pytest.mark.asyncio
@@ -311,6 +341,10 @@ async def test_ingest_inbound_dispatch_failure_degrades(monkeypatch):
     # dispatch 拋錯不應讓整體失敗;訊息已落地,回傳 session_id
     result = await channel_out.ingest_inbound(db, uuid.uuid4(), uuid.uuid4(), inbound)
     assert result == sid
+    kinds = [r[0] for r in rec]
+    assert kinds == ["visitor", "session", "message"]  # dispatch 拋錯前未記錄
+    assert db.committed == 1  # 訪客訊息已先提交落地
+    assert db.rolled_back == 1  # 只回滾 dispatch 的半成品寫入
 
 
 @pytest.mark.asyncio
