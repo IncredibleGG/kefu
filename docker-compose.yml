@@ -1,0 +1,71 @@
+services:
+  postgres:
+    restart: unless-stopped
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: kefu
+      POSTGRES_PASSWORD: kefu
+      POSTGRES_DB: kefu
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # not exposed to host — only the backend talks to it (avoids port clashes)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kefu"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    restart: unless-stopped
+    image: redis:7-alpine
+    # not exposed to host
+
+  backend:
+    restart: unless-stopped
+    build: ./backend
+    environment:
+      KEFU_DATABASE_URL: postgresql+asyncpg://kefu:kefu@postgres:5432/kefu
+      KEFU_REDIS_URL: redis://redis:6379/0
+      KEFU_OPENAI_API_KEY: ${KEFU_OPENAI_API_KEY:-}
+      KEFU_OPENAI_BASE_URL: ${KEFU_OPENAI_BASE_URL:-https://api.openai.com/v1}
+      KEFU_JWT_SECRET: ${KEFU_JWT_SECRET:-change-me}
+      # 靜態加密金鑰:一經設定切勿更動(改了則舊密文無法解密)。未設則由 JWT_SECRET 衍生。
+      KEFU_SECRET_KEY: ${KEFU_SECRET_KEY:-}
+      # CORS 白名單(逗號分隔)或 "*" 全開;widget 跨網域嵌入預設全開
+      KEFU_CORS_ORIGINS: ${KEFU_CORS_ORIGINS:-*}
+      KEFU_ENVIRONMENT: dev
+      KEFU_UPLOAD_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads   # 上傳附件持久化
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "18000:8000"   # host 18000 -> container 8000 (backend API, optional direct access)
+
+  frontend:
+    restart: unless-stopped
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: ""      # same-origin; nginx reverse-proxies /api and /ws
+        VITE_MOCK: "off"       # pure real API — no mock
+    depends_on:
+      - backend
+      - widget       # nginx reverse-proxies /embed.js -> widget; needs its DNS at worker start
+    ports:
+      - "18090:80"     # host 18090 -> nginx (point CF tunnel HERE)
+
+  widget:
+    restart: unless-stopped
+    build: ./widget
+    depends_on:
+      - backend
+    ports:
+      - "18091:80"     # host 18091 -> nginx (訪客 widget demo/embed.js)
+
+volumes:
+  pgdata:
+  uploads:

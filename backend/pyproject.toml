@@ -1,0 +1,43 @@
+[project]
+name = "kefu-backend"
+version = "0.1.0"
+description = "kefu — AI-native, Telegram-first, multi-tenant customer service platform (clean-room)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.6",
+    "python-jose[cryptography]>=3.3",
+    "bcrypt>=4.2",
+    "redis>=5.2",
+    "httpx>=0.28",
+    "pgvector>=0.3",
+    "python-multipart>=0.0.17",
+    "fastembed>=0.4",
+    "dnspython>=2.6",
+    # 知識庫匯入(ingest):文檔解析 + 網站爬取抽正文
+    "pypdf>=5.0",          # PDF → 純文字
+    "python-docx>=1.1",    # DOCX → 純文字
+    "beautifulsoup4>=4.12",  # 網站爬取抽正文(爬取本身用既有 httpx + 標準庫 urllib)
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.8", "pytest>=8.3", "pytest-asyncio>=0.24"]
+# 企業 SAML SSO 為 code-ready:安裝此 extra(signxml + lxml)才會啟用完整 XML-DSig
+# 驗簽;未安裝時所有 /api/v1/saml/acs 一律 fail-closed 拒絕(見 app/api/v1/saml.py)。
+saml = ["signxml>=3.2", "lxml>=5.0"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]

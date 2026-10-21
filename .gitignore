@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Node / web builds
+node_modules/
+dist/
+dist-native/
+coverage/
+
+# Env & secrets(只收 .env.example;真實金鑰一律走 ~/.config/devkeys 或 CI secrets)
+.env
+.env.*
+!.env.example
+
+# Rust / Tauri
+target/
+
+# Capacitor / Android
+clients/mobile/android/.gradle/
+clients/mobile/android/build/
+clients/mobile/android/app/build/
+clients/mobile/android/capacitor-cordova-android-plugins/build/
+clients/mobile/android/local.properties
+
+# Capacitor / iOS
+clients/mobile/ios/App/build/
+clients/mobile/ios/App/Pods/
+clients/mobile/ios/DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# 簽章 / 憑證 / 推播設定(絕不入庫;CI 以 secrets 注入)
+*.keystore
+*.jks
+*.p12
+*.p8
+*.mobileprovision
+*.cer
+google-services.json
+GoogleService-Info.plist
+
+# Misc
+.DS_Store
+*.log
+.idea/

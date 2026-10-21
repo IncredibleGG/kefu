@@ -1,0 +1,255 @@
+@import "tailwindcss";
+
+/* ============================================================
+   kefu 設計系統(乾淨室自訂 tokens)
+   - 中性灰底:slate/zinc
+   - 品牌強調色:可調的紫羅蘭(避開純綠 cskefu / 純藍 tgo)
+   - 亮/暗雙主題:以 CSS 變數驅動,.dark 類名切換
+   - 8pt 網格、圓角 6–10px、WCAG AA 對比
+   顏色一律用 HSL 分量,方便 Tailwind 用 hsl(var(--x)) 帶透明度。
+   ============================================================ */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* 圓角基準(6–10px) */
+  --radius: 0.5rem; /* 8px */
+
+  /* ---- 亮色主題 ---- */
+  --background: 210 20% 98%;      /* slate-50 微冷 */
+  --foreground: 222 20% 18%;      /* 近黑深灰 */
+
+  --card: 0 0% 100%;
+  --card-foreground: 222 20% 18%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 20% 18%;
+
+  --muted: 215 20% 94%;
+  --muted-foreground: 215 12% 45%;
+
+  --accent: 215 22% 92%;          /* hover 底 */
+  --accent-foreground: 222 25% 22%;
+
+  --border: 215 18% 88%;
+  --input: 215 18% 86%;
+  --ring: var(--brand);
+
+  /* 品牌強調色(可整組替換即改品牌) */
+  --brand: 255 78% 68%;           /* 紫羅蘭 #7c5cff 系 */
+  --brand-foreground: 0 0% 100%;
+  --brand-muted: 255 70% 96%;
+
+  /* primary 為 brand 的別名(對齊 shadcn 慣例的 primary utility,值恆等於品牌色) */
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+
+  /* 語意色 */
+  --success: 152 55% 40%;
+  --success-foreground: 0 0% 100%;
+  --warning: 35 92% 48%;
+  --warning-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --info: 205 80% 46%;
+  --info-foreground: 0 0% 100%;
+
+  /* 坐席狀態色點 */
+  --status-online: 152 60% 42%;
+  --status-busy: 0 72% 55%;
+  --status-away: 38 92% 50%;
+  --status-offline: 215 12% 60%;
+
+  /* 圖表色板(brand-neutral,依序) */
+  --chart-1: 255 78% 68%;
+  --chart-2: 190 70% 45%;
+  --chart-3: 35 92% 55%;
+  --chart-4: 320 65% 60%;
+  --chart-5: 152 55% 45%;
+
+  --sidebar: 222 24% 14%;         /* 窄圖示主欄:深色一致(亮暗皆深,聚焦) */
+  --sidebar-foreground: 215 20% 75%;
+}
+
+.dark {
+  --background: 222 24% 10%;       /* zinc-950 冷調 */
+  --foreground: 210 20% 92%;
+
+  --card: 222 22% 13%;
+  --card-foreground: 210 20% 92%;
+
+  --popover: 222 22% 13%;
+  --popover-foreground: 210 20% 92%;
+
+  --muted: 220 16% 20%;
+  --muted-foreground: 215 15% 62%;
+
+  --accent: 220 16% 22%;
+  --accent-foreground: 210 20% 92%;
+
+  --border: 220 14% 24%;
+  --input: 220 14% 26%;
+  --ring: var(--brand);
+
+  --brand: 255 82% 72%;
+  --brand-foreground: 222 30% 12%;
+  --brand-muted: 255 30% 22%;
+
+  /* primary 別名同步暗色品牌值(var 於使用時解析,自動取暗色 --brand) */
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+
+  --success: 152 50% 46%;
+  --warning: 35 88% 56%;
+  --destructive: 0 68% 58%;
+  --info: 205 75% 56%;
+
+  --chart-1: 255 82% 72%;
+  --chart-2: 190 65% 55%;
+  --chart-3: 35 88% 62%;
+  --chart-4: 320 60% 66%;
+  --chart-5: 152 50% 55%;
+
+  --sidebar: 222 28% 8%;
+  --sidebar-foreground: 215 18% 70%;
+}
+
+/* 將 CSS 變數映射為 Tailwind 主題色(Tailwind v4 CSS-first) */
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-brand: hsl(var(--brand));
+  --color-brand-foreground: hsl(var(--brand-foreground));
+  --color-brand-muted: hsl(var(--brand-muted));
+
+  /* primary utility 對應(bg-primary / text-primary / text-primary-foreground …) */
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
+
+  --color-status-online: hsl(var(--status-online));
+  --color-status-busy: hsl(var(--status-busy));
+  --color-status-away: hsl(var(--status-away));
+  --color-status-offline: hsl(var(--status-offline));
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", "PingFang TC",
+    "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* 細、自動隱藏捲軸(現代 SaaS 感) */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  /* 焦點可見(無障礙) */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+/* TipTap 編輯器內容基本樣式 */
+.tiptap {
+  outline: none;
+  min-height: 2.5rem;
+}
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: hsl(var(--muted-foreground));
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+.tiptap p {
+  margin: 0.15rem 0;
+}
+
+/* Markdown 訊息氣泡內排版 */
+.md-body > *:first-child { margin-top: 0; }
+.md-body > *:last-child { margin-bottom: 0; }
+.md-body p { margin: 0.35rem 0; }
+.md-body ul, .md-body ol { margin: 0.35rem 0; padding-left: 1.25rem; }
+.md-body ul { list-style: disc; }
+.md-body ol { list-style: decimal; }
+.md-body code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: hsl(var(--muted-foreground) / 0.15);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+.md-body pre {
+  background: hsl(var(--muted-foreground) / 0.12);
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0.4rem 0;
+}
+.md-body pre code { background: transparent; padding: 0; }
+.md-body a { color: hsl(var(--brand)); text-decoration: underline; }
+
+@keyframes kefu-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-in-msg { animation: kefu-fade-in 0.18s ease-out; }

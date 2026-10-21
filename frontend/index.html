@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>kefu 坐席工作台</title>
+
+    <!-- PWA:可安裝 + 離線殼 -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#6d5efc" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="kefu 坐席台" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <script>
+      // 首屏防閃爍:在 React 掛載前套用已保存的主題
+      (function () {
+        try {
+          var t = localStorage.getItem("kefu-theme");
+          if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+            document.documentElement.classList.add("dark");
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    <!-- PWA 獨立入口:註冊 SW 並提供自帶「安裝到桌面」浮動按鈕(不動 main.tsx) -->
+    <script type="module" src="/src/pwa.ts"></script>
+  </body>
+</html>

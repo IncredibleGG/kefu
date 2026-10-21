@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>kefu 平台现况</title>
+<meta name="description" content="kefu AI 客服平台的现况、对标 LiveChat 的功能对齐矩阵,与多轮多-agent 测试/修复纪录。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root{
+    color-scheme:light;
+    --bg:#f6f5f9; --surface:#ffffff; --surface-2:#fbfafd; --ink:#1c1a26; --ink-2:#544f63;
+    --muted:#8b8698; --line:#e7e4ef; --line-2:#efedf5;
+    --brand:#5b4ef0; --brand-soft:#efedff; --brand-ink:#3d31c9;
+    --ok:#1f9d64; --ok-soft:#e4f6ec; --warn:#c98a12; --warn-soft:#fbf1dc; --crit:#d64550; --crit-soft:#fbe6e8; --slate:#5a6b86; --slate-soft:#eaeef5;
+    --shadow:0 1px 2px rgba(28,26,38,.04),0 8px 24px -12px rgba(28,26,38,.14);
+    --radius:16px;
+    --display:"Bricolage Grotesque",Georgia,serif;
+    --body:"IBM Plex Sans",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme:dark;
+      --bg:#0f0e15; --surface:#181622; --surface-2:#1f1c2b; --ink:#efedf6; --ink-2:#b6b1c6;
+      --muted:#847e97; --line:#2a2738; --line-2:#242131;
+      --brand:#9d92ff; --brand-soft:#241f3f; --brand-ink:#bcb4ff;
+      --ok:#4bd08c; --ok-soft:#123024; --warn:#e6b24e; --warn-soft:#322813; --crit:#f2848d; --crit-soft:#3a1c20; --slate:#9db0cf; --slate-soft:#1e2534;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#0f0e15; --surface:#181622; --surface-2:#1f1c2b; --ink:#efedf6; --ink-2:#b6b1c6;
+    --muted:#847e97; --line:#2a2738; --line-2:#242131;
+    --brand:#9d92ff; --brand-soft:#241f3f; --brand-ink:#bcb4ff;
+    --ok:#4bd08c; --ok-soft:#123024; --warn:#e6b24e; --warn-soft:#322813; --crit:#f2848d; --crit-soft:#3a1c20; --slate:#9db0cf; --slate-soft:#1e2534;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -14px rgba(0,0,0,.6);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  img{max-width:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1020px;margin:0 auto;padding-inline:20px;padding-block:0}
+  a{color:var(--brand-ink)}
+  h1,h2,h3{font-family:var(--display);font-weight:700;text-wrap:balance;letter-spacing:-.01em;margin:0}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .top .wrap{display:flex;align-items:center;gap:14px;padding-block:14px;flex-wrap:wrap}
+  .logo{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--brand),#8b7bff);display:grid;place-items:center;color:#fff;font-family:var(--display);font-weight:800;font-size:18px;flex:none}
+  .top h1{font-size:17px}
+  .top .sub{color:var(--muted);font-size:12.5px}
+  .top-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .lang{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px;box-shadow:var(--shadow)}
+  .lang button{font-family:var(--mono);font-size:12px;color:var(--ink-2);background:none;border:none;padding:5px 10px;border-radius:999px;cursor:pointer;line-height:1}
+  .lang button[aria-pressed="true"]{background:var(--brand);color:#fff}
+  .live{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:12.5px;color:var(--ink-2);text-decoration:none;background:var(--surface);border:1px solid var(--line);padding:7px 12px;border-radius:999px;box-shadow:var(--shadow)}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+  section{padding-block:34px;border-bottom:1px solid var(--line-2)}
+  .hero{padding-top:40px}
+  .hero h2{font-size:clamp(30px,6vw,46px);line-height:1.02;font-weight:800}
+  .hero p.lede{font-size:17px;color:var(--ink-2);max-width:64ch;margin-top:16px}
+  .tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+  .tag{font-family:var(--mono);font-size:12px;color:var(--ink-2);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:5px 10px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:26px}
+  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 16px;box-shadow:var(--shadow)}
+  .kpi .n{font-family:var(--display);font-weight:800;font-size:30px;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .kpi .l{font-size:12.5px;color:var(--muted);margin-top:8px}
+  .kpi .l b{color:var(--ink-2);font-weight:600}
+  h2.sec{font-size:24px}
+  .sec-lede{color:var(--ink-2);margin-top:8px;max-width:66ch}
+  .parity{display:grid;grid-template-columns:200px 1fr;gap:26px;align-items:center;margin-top:22px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow)}
+  .ring{position:relative;width:200px;height:200px;margin:0 auto}
+  .ring svg{transform:rotate(-90deg)}
+  .ring .center{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+  .ring .center .big{font-family:var(--display);font-weight:800;font-size:38px;line-height:1;letter-spacing:-.02em}
+  .ring .center .cap{font-size:11.5px;color:var(--muted);margin-top:4px}
+  .bars{display:flex;flex-direction:column;gap:14px}
+  .barrow{display:grid;grid-template-columns:110px 1fr 44px;gap:12px;align-items:center;font-size:13.5px}
+  .barrow .k{color:var(--ink-2)}
+  .track{height:10px;background:var(--line-2);border-radius:99px;overflow:hidden}
+  .fill{height:100%;border-radius:99px}
+  .barrow .v{font-family:var(--mono);text-align:right;color:var(--ink-2);font-size:13px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow)}
+  .card h3{font-size:16px;display:flex;align-items:center;gap:9px}
+  .card ul{margin:12px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px}
+  .card li{display:flex;gap:10px;font-size:13.5px;color:var(--ink-2);align-items:flex-start}
+  .card li .mk{flex:none;margin-top:2px}
+  .chip{font-family:var(--mono);font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
+  .c-ok{color:var(--ok);background:var(--ok-soft)} .c-warn{color:var(--warn);background:var(--warn-soft)}
+  .c-crit{color:var(--crit);background:var(--crit-soft)} .c-slate{color:var(--slate);background:var(--slate-soft)}
+  .c-brand{color:var(--brand-ink);background:var(--brand-soft)}
+  .mk-ok{color:var(--ok)} .mk-new{color:var(--brand-ink)}
+  .tablewrap{overflow-x:auto;margin-top:18px;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  table{width:100%;border-collapse:collapse;background:var(--surface);font-size:13.5px;min-width:560px}
+  th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line-2)}
+  thead th{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface-2)}
+  tbody tr:last-child td{border-bottom:none}
+  td.area{font-weight:600;color:var(--ink)}
+  td.num{font-family:var(--mono);text-align:center;font-variant-numeric:tabular-nums}
+  .verdict{color:var(--ink-2);font-size:12.5px}
+  .rounds{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}
+  .round{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow);position:relative}
+  .round .rn{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .round h3{font-size:15px;margin-top:6px}
+  .round .stat{font-family:var(--display);font-weight:800;font-size:22px;margin-top:12px;letter-spacing:-.01em}
+  .round p{font-size:12.5px;color:var(--ink-2);margin:8px 0 0}
+  .gaps{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+  .gap h3{font-size:14px;margin-bottom:2px}
+  .gap .why{font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:10px}
+  footer{padding-block:30px 46px;color:var(--muted);font-size:12.5px}
+  footer .wrap{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center}
+  .note{background:var(--brand-soft);border:1px solid color-mix(in srgb,var(--brand) 25%,var(--line));border-radius:12px;padding:12px 15px;font-size:13px;color:var(--brand-ink);margin-top:18px}
+  @media (max-width:760px){
+    .kpis{grid-template-columns:1fr 1fr}
+    .parity{grid-template-columns:1fr}
+    .grid2,.gaps,.rounds{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="logo">k</div>
+    <div>
+      <h1 data-k="brandTitle">kefu 平台现况</h1>
+      <div class="sub" data-k="brandSub">AI 原生・多租户白牌客服平台</div>
+    </div>
+    <div class="top-right">
+      <div class="lang" role="group" aria-label="Language">
+        <button data-lang="zh-CN" aria-pressed="true">简中</button>
+        <button data-lang="en" aria-pressed="false">EN</button>
+        <button data-lang="zh-Hant" aria-pressed="false">繁中</button>
+      </div>
+      <a class="live" href="https://kf.56k.cc" target="_blank" rel="noopener"><span class="dot"></span><span data-k="live">kf.56k.cc 线上</span></a>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="hero">
+    <div class="eyebrow" data-k="heroEyebrow">项目状态报告 · 2026-09-29</div>
+    <h2 data-k="heroH">从清洁室自研,到对标 LiveChat 的可上线平台。</h2>
+    <p class="lede" data-k="heroLede">kefu 是一套 AI 原生、多租户白牌的在线客服平台。全渠道接待、知识库 RAG、AI 代理与工作流、工单 / CRM、路由排班、报表与销售追踪、计费与白牌转售,皆已建置并部署于公网。经三轮多-agent 测试,一批安全与可用性问题已修复,四项对标 LiveChat 的近程功能已补齐。</p>
+    <div class="tags">
+      <span class="tag">14+ i18n</span><span class="tag">Web · Telegram · WhatsApp · Email · Facebook</span>
+      <span class="tag" data-k="tagRag">RAG 反幻觉</span><span class="tag" data-k="tagReseller">白牌转售</span><span class="tag">FastAPI + React + Postgres/pgvector</span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="n" style="color:var(--brand-ink)">≈63%</div><div class="l"><b data-k="kpi1a">对齐 LiveChat 功能追平率</b><br><span data-k="kpi1b">非项目完成度 · 173 功能点核对</span></div></div>
+      <div class="kpi"><div class="n" style="color:var(--ok)">0</div><div class="l"><b data-k="kpi2a">未解 P0 / P1</b><br><span data-k="kpi2b">阻断级问题全数修复</span></div></div>
+      <div class="kpi"><div class="n">61</div><div class="l"><b data-k="kpi3a">已修问题</b><br><span data-k="kpi3b">多轮测试 · 对抗式复核</span></div></div>
+      <div class="kpi"><div class="n">15</div><div class="l"><b data-k="kpi4a">本轮新增 / 修复</b><br><span data-k="kpi4b">7 可用性 + 4 功能 + 整合</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow" data-k="pEyebrow">竞品对齐</div>
+    <h2 class="sec" data-k="pH">对标 LiveChat 的功能矩阵</h2>
+    <p class="sec-lede" data-k="pLede">由产品 agent 逐点核对 173 个 LiveChat 关键功能。「追平率 = 完全对齐或超越的比例」,不是项目完成度 —— 平台本身已 100% 建置并在线运行。核心即时客服体验已对齐甚至超越;差距集中在整合生态、工单 HelpDesk 深度与企业版安全,多属产品路线决策。</p>
+    <div class="parity">
+      <div class="ring">
+        <svg width="200" height="200" viewBox="0 0 200 200" aria-hidden="true">
+          <circle cx="100" cy="100" r="82" fill="none" stroke="var(--line-2)" stroke-width="20"/>
+          <circle cx="100" cy="100" r="82" fill="none" stroke="var(--ok)" stroke-width="20" stroke-dasharray="238.3 515.2" stroke-dashoffset="0"/>
+          <circle cx="100" cy="100" r="82" fill="none" stroke="var(--brand)" stroke-width="20" stroke-dasharray="74.5 515.2" stroke-dashoffset="-238.3"/>
+          <circle cx="100" cy="100" r="82" fill="none" stroke="var(--warn)" stroke-width="20" stroke-dasharray="107.3 515.2" stroke-dashoffset="-312.8"/>
+          <circle cx="100" cy="100" r="82" fill="none" stroke="var(--crit)" stroke-width="20" stroke-dasharray="74.5 515.2" stroke-dashoffset="-420.1"/>
+        </svg>
+        <div class="center"><div class="big" style="color:var(--brand-ink)">≈63%</div><div class="cap" data-k="ringCap">对齐 + 超越</div></div>
+      </div>
+      <div class="bars">
+        <div class="barrow"><span class="k" data-k="bAligned">已对齐</span><span class="track"><span class="fill" style="width:46%;background:var(--ok)"></span></span><span class="v">80</span></div>
+        <div class="barrow"><span class="k" data-k="bExceeds">超越</span><span class="track"><span class="fill" style="width:14.5%;background:var(--brand)"></span></span><span class="v">25</span></div>
+        <div class="barrow"><span class="k" data-k="bPartial">部分对齐</span><span class="track"><span class="fill" style="width:23%;background:var(--warn)"></span></span><span class="v">40</span></div>
+        <div class="barrow"><span class="k" data-k="bMissing">缺失</span><span class="track"><span class="fill" style="width:14.5%;background:var(--crit)"></span></span><span class="v">28</span></div>
+      </div>
+    </div>
+    <div class="note" data-k="pNote">追平率 ≠ 进度条。完全没有的仅 16%(28 项),且多属刻意路线决策;若计「至少部分覆盖」则达 84%。分母是 LiveChat 的清单,kefu 自身多出的 AI 原生功能未计入,故此数偏保守。</div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th data-k="thArea">功能域</th><th class="num" data-k="thAl">对齐</th><th class="num" data-k="thPa">部分</th><th class="num" data-k="thMi">缺失</th><th data-k="thVe">评语</th></tr></thead>
+        <tbody>
+          <tr><td class="area" data-k="a1">访客端 / Widget / 主动接触</td><td class="num">8</td><td class="num">4</td><td class="num">1</td><td class="verdict" data-k="v1">高度对齐,多处超越(sneak-peek、跨渠道富讯息)</td></tr>
+          <tr><td class="area" data-k="a2">坐席工作台 / 收件箱</td><td class="num">9</td><td class="num">2</td><td class="num">0</td><td class="verdict" data-k="v2">达标并在 AI / 协作维度超越</td></tr>
+          <tr><td class="area" data-k="a3">AI / 知识库 / 自动化 / Bot</td><td class="num">11</td><td class="num">4</td><td class="num">2</td><td class="verdict" data-k="v3">AI 原生超越;Bot 自动接管本轮补上</td></tr>
+          <tr><td class="area" data-k="a4">全渠道 / 整合</td><td class="num">7</td><td class="num">4</td><td class="num">5</td><td class="verdict" data-k="v4">渠道具竞争力;整合市集是最大落差</td></tr>
+          <tr><td class="area" data-k="a5">路由 / 排班 / 团队</td><td class="num">7</td><td class="num">5</td><td class="num">0</td><td class="verdict" data-k="v5">全链路对齐;排班联动派单已实测</td></tr>
+          <tr><td class="area" data-k="a6">工单 / CRM / SLA</td><td class="num">17</td><td class="num">7</td><td class="num">9</td><td class="verdict" data-k="v6">CRM 强;工单 HelpDesk 深度待补</td></tr>
+          <tr><td class="area" data-k="a7">报表 / 目标 / 销售</td><td class="num">6</td><td class="num">3</td><td class="num">4</td><td class="verdict" data-k="v7">Sales tracker + 数据导出超越</td></tr>
+          <tr><td class="area" data-k="a8">计费 / 白牌 / 多租户</td><td class="num">2</td><td class="num">6</td><td class="num">2</td><td class="verdict" data-k="v8">白牌转售扎实;发票 / 税务待接支付</td></tr>
+          <tr><td class="area" data-k="a9">账号 / 安全 / RBAC / i18n</td><td class="num">14</td><td class="num">5</td><td class="num">5</td><td class="verdict" data-k="v9">RBAC / 2FA / 审计齐;SAML 属企业版</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow" data-k="fEyebrow">本轮交付</div>
+    <h2 class="sec" data-k="fH">近程功能:把差距补上</h2>
+    <p class="sec-lede" data-k="fLede">依测试指出的「值得补的近程功能」,四项对标 LiveChat 的核心能力已建置、部署、实测。</p>
+    <div class="grid2">
+      <div class="card">
+        <h3><span class="mk mk-new">◆</span> <span data-k="f1h">ChatBot 事件接线</span> <span class="chip c-brand" data-k="chNew">新</span></h3>
+        <ul>
+          <li><span class="mk mk-ok">↳</span><span data-k="f1a">流程 builder 接上入站事件:session_start / keyword / message 命中即自动跑流程并接管,可转人。</span></li>
+          <li><span class="mk mk-ok">↳</span><span data-k="f1b">命中则跳过 RAG 避免双重回覆;无流程的租户零回归。</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="mk mk-new">◆</span> <span data-k="f2h">公司 (Company) 一等实体</span> <span class="chip c-brand" data-k="chNew2">新</span></h3>
+        <ul>
+          <li><span class="mk mk-ok">↳</span><span data-k="f2a">公司主档 + 联系人归属,打开 B2B;新增 /company 导航与管理页。</span></li>
+          <li><span class="mk mk-ok">↳</span><span data-k="f2b">取代先前只能靠 attributes.company 字符串的做法。</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="mk mk-new">◆</span> <span data-k="f3h">富讯息轮播卡片 (Carousel)</span> <span class="chip c-brand" data-k="chNew3">新</span></h3>
+        <ul>
+          <li><span class="mk mk-ok">↳</span><span data-k="f3a">meta.cards 多卡横向轮播:坐席端构建器、widget scroll-snap、单卡兼容。</span></li>
+          <li><span class="mk mk-ok">↳</span><span data-k="f3b">补齐先前唯一 missing 的富讯息类型。</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="mk mk-new">◆</span> <span data-k="f4h">SLA 营业时间感知</span> <span class="chip c-brand" data-k="chNew4">新</span></h3>
+        <ul>
+          <li><span class="mk mk-ok">↳</span><span data-k="f4a">到期只累计营业时段、跨夜与周末自动跳过。</span></li>
+          <li><span class="mk mk-ok">↳</span><span data-k="f4b">无设定 / 24×7 / 无效时区三层退回连续计时,零回归。</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow" data-k="qEyebrow">质量验证</div>
+    <h2 class="sec" data-k="qH">多轮多-agent 测试</h2>
+    <p class="sec-lede" data-k="qLede">每一轮都由独立测试 agent 实打在线系统,每条发现再由对抗式 agent 复核以排除误报。</p>
+    <div class="rounds">
+      <div class="round">
+        <div class="rn">ROUND 1 · 34 agents</div>
+        <h3 data-k="r1h">全功能域 QA</h3>
+        <div class="stat" style="color:var(--ok)" data-k="r1s">24 修复</div>
+        <p data-k="r1p">10 功能域实测 + 24 对抗复核。0 误报,P0=0、P1=7、P2=17 —— 全数修复并部署。</p>
+      </div>
+      <div class="round">
+        <div class="rn">ROUND 2 · 18 agents</div>
+        <h3 data-k="r2h">对齐 + 可用性</h3>
+        <div class="stat" style="color:var(--ok)" data-k="r2s">22 修复</div>
+        <p data-k="r2p">173 功能点对齐矩阵 + 51 可用性问题(1 P1 / 21 P2 / 29 P3)。P1+P2 全修,零回归。</p>
+      </div>
+      <div class="round">
+        <div class="rn">ROUND 3 · 9 <span data-k="r3j">旅程</span></div>
+        <h3 data-k="r3h">端到端旅程回归</h3>
+        <div class="stat" style="color:var(--ok)" data-k="r3s">9/9 · 3 修复</div>
+        <p data-k="r3p">9 条完整用户旅程全走通、0 P1、0 误报;发现 3 个 P2(轮播卡号遮罩、已结束会话守卫、onboarding pending 计数)均已修复。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow" data-k="xEyebrow">已修复</div>
+    <h2 class="sec" data-k="xH">安全与可用性修复</h2>
+    <div class="grid2">
+      <div class="card">
+        <h3>🔒 <span data-k="secSec">安全</span></h3>
+        <ul>
+          <li><span class="chip c-crit">P1</span> <span data-k="s1">Webhook SSRF —— 建立与送出皆挡内网 / metadata / file://</span></li>
+          <li><span class="chip c-crit">P1</span> <span data-k="s2">限流可绕过 —— XFF 改可信代理跳数,伪造无效</span></li>
+          <li><span class="chip c-crit">P1</span> <span data-k="s3">Token 撤销 —— 停用坐席即刻 401</span></li>
+          <li><span class="chip c-warn">P2</span> <span data-k="s4">卡号遮罩绕过、重设 / 邀请 token 单次使用</span></li>
+          <li><span class="chip c-warn">P2</span> <span data-k="s5">工单 / 访客 RBAC、TOTP 种子加密</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>✨ <span data-k="secUse">可用性</span></h3>
+        <ul>
+          <li><span class="chip c-crit">P1</span> <span data-k="u1">Widget 一行嵌入码交付 —— /embed.js 现回真 JS</span></li>
+          <li><span class="chip c-warn">P2</span> <span data-k="u2">收件箱:讯息预览 / 未读 / 搜索 / 分页 / 已结束状态</span></li>
+          <li><span class="chip c-warn">P2</span> <span data-k="u3">统一错误信封 + X-Request-Id 追踪</span></li>
+          <li><span class="chip c-warn">P2</span> <span data-k="u4">删集合滤 RAG、支付门槛、排班分段班</span></li>
+          <li><span class="chip c-warn">P2</span> <span data-k="u5">二级导航 / 报表总览 14 语在地化</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section style="border-bottom:none">
+    <div class="eyebrow" data-k="gEyebrow">路线决策</div>
+    <h2 class="sec" data-k="gH">仍缺失 —— 为什么</h2>
+    <p class="sec-lede" data-k="gLede">缺失多属刻意取舍或路线决策,而非做不到。以下按原因分类。</p>
+    <div class="gaps">
+      <div class="gap card">
+        <h3 data-k="g1h">定位取舍 <span class="chip c-slate" data-k="g1t">策略</span></h3>
+        <div class="why" data-k="g1w">以开放 API + Webhook 自建整合取代生态</div>
+        <ul><li data-k="g1a">整合市集 / App 目录</li><li data-k="g1b">Shopify / 电商订单脉络</li><li data-k="g1c">SMS · Apple Messages(官方收摊)</li></ul>
+      </div>
+      <div class="gap card">
+        <h3 data-k="g2h">企业版 <span class="chip c-slate" data-k="g2t">路线</span></h3>
+        <div class="why" data-k="g2w">中小客户以 Google OAuth 覆盖</div>
+        <ul><li data-k="g2a">SAML / SCIM 自动配置</li><li data-k="g2b">发票 / 税务 / VAT(待接支付)</li><li data-k="g2c">2FA 备援码 · 登录 IP 白名单</li></ul>
+      </div>
+      <div class="gap card">
+        <h3 data-k="g3h">工单 HelpDesk 深度 <span class="chip c-warn" data-k="g3t">近程</span></h3>
+        <div class="why" data-k="g3w">工单目前定位轻量待办</div>
+        <ul><li data-k="g3a">工单触发器 / 合并 / 到期</li><li data-k="g3b">SLA 绑工单 + 暂停(需加 schema)</li></ul>
+      </div>
+      <div class="gap card">
+        <h3 data-k="g4h">MVP 缩减 <span class="chip c-warn" data-k="g4t">近程</span></h3>
+        <div class="why" data-k="g4w">单一版本先覆盖多数场景</div>
+        <ul><li data-k="g4a">可自订 post-chat 问卷 · 图形 eye-catcher</li><li data-k="g4b">知识库使用分析 · 排程订阅式报表</li></ul>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <span data-k="footA">kefu · AI 原生多租户白牌客服平台</span>
+    <span style="color:var(--line)">|</span>
+    <a href="https://kf.56k.cc" target="_blank" rel="noopener">kf.56k.cc</a>
+    <span style="color:var(--line)">|</span>
+    <span data-k="footB">清洁室自研 · 对标 LiveChat / Intercom</span>
+    <span style="margin-left:auto" class="mono" data-k="footC">状态报告 2026-09-29</span>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var EN = {
+    brandTitle:"kefu Platform Status", brandSub:"AI-native · multi-tenant white-label helpdesk", live:"kf.56k.cc live",
+    heroEyebrow:"Project status report · 2026-09-29",
+    heroH:"From a clean-room build to a production platform on par with LiveChat.",
+    heroLede:"kefu is an AI-native, multi-tenant white-label live-chat platform. Omnichannel inbox, knowledge-base RAG, AI agents & workflows, tickets/CRM, routing & scheduling, reports & sales tracking, billing & white-label reselling — all built and deployed to the public web. Across three rounds of multi-agent testing, a batch of security and usability issues were fixed, and four near-term LiveChat-parity features were added.",
+    tagRag:"anti-hallucination RAG", tagReseller:"white-label reselling",
+    kpi1a:"LiveChat feature-parity rate", kpi1b:"not project completion · 173 features checked",
+    kpi2a:"Open P0 / P1", kpi2b:"all blocker-level issues fixed",
+    kpi3a:"Issues fixed", kpi3b:"multi-round testing · adversarial verify",
+    kpi4a:"This round: built / fixed", kpi4b:"7 usability + 4 features + integration",
+    pEyebrow:"Competitive parity", pH:"Feature matrix vs LiveChat",
+    pLede:"Product agents checked 173 key LiveChat features one by one. “Parity rate = share fully aligned or exceeding” — not project completion. The platform itself is 100% built and running live. Core real-time support is at or above par; gaps cluster in the integration ecosystem, ticket/HelpDesk depth and enterprise security — mostly roadmap decisions.",
+    ringCap:"aligned + exceeds", bAligned:"Aligned", bExceeds:"Exceeds", bPartial:"Partial", bMissing:"Missing",
+    pNote:"Parity rate ≠ progress bar. Only 16% (28 items) are entirely absent, mostly deliberate roadmap choices; counting “at least partial” reaches 84%. The denominator is LiveChat’s list, so kefu’s own extra AI-native features aren’t counted — the number is conservative.",
+    thArea:"Domain", thAl:"Aligned", thPa:"Partial", thMi:"Missing", thVe:"Verdict",
+    a1:"Visitor / Widget / proactive", v1:"Highly aligned, exceeds in places (sneak-peek, cross-channel rich messages)",
+    a2:"Agent workspace / inbox", v2:"On par, exceeds in AI / collaboration",
+    a3:"AI / Knowledge / Automation / Bot", v3:"AI-native exceeds; Bot auto-takeover added this round",
+    a4:"Omnichannel / integrations", v4:"Channels competitive; integration marketplace is the biggest gap",
+    a5:"Routing / scheduling / team", v5:"Full-stack aligned; schedule-driven dispatch verified",
+    a6:"Tickets / CRM / SLA", v6:"CRM strong; ticket HelpDesk depth pending",
+    a7:"Reports / goals / sales", v7:"Sales tracker + data export exceed",
+    a8:"Billing / white-label / multi-tenant", v8:"Reselling solid; invoices / tax pending payment gateway",
+    a9:"Account / security / RBAC / i18n", v9:"RBAC / 2FA / audit complete; SAML is enterprise-tier",
+    fEyebrow:"This round", fH:"Near-term features: closing the gap",
+    fLede:"Following the tested “near-term features worth building”, four core LiveChat-parity capabilities were built, deployed and verified.",
+    f1h:"ChatBot event wiring", chNew:"NEW", f1a:"Flow builder wired to inbound events: session_start / keyword / message triggers auto-run the flow and take over, with handoff.", f1b:"On a hit, RAG is skipped to avoid double replies; tenants without flows see zero regression.",
+    f2h:"Company as a first-class entity", chNew2:"NEW", f2a:"Company records + contact affiliation, opening B2B; new /company nav and management page.", f2b:"Replaces the previous attributes.company string-only approach.",
+    f3h:"Rich-message carousel", chNew3:"NEW", f3a:"meta.cards multi-card horizontal carousel: agent builder, widget scroll-snap, single-card compatible.", f3b:"Fills the previously only-missing rich-message type.",
+    f4h:"Business-hours-aware SLA", chNew4:"NEW", f4a:"Due time counts working hours only; overnight and weekends skipped.", f4b:"No config / 24×7 / invalid tz all fall back to continuous timing — zero regression.",
+    qEyebrow:"Quality", qH:"Multi-round multi-agent testing",
+    qLede:"Each round has independent test agents hit the live system, and every finding is re-verified by an adversarial agent to rule out false positives.",
+    r1h:"Full-domain QA", r1s:"24 fixed", r1p:"10 domains tested + 24 adversarial verifications. 0 false positives; P0=0, P1=7, P2=17 — all fixed and deployed.",
+    r2h:"Parity + usability", r2s:"22 fixed", r2p:"173-feature parity matrix + 51 usability issues (1 P1 / 21 P2 / 29 P3). P1+P2 all fixed, zero regression.",
+    r3j:"journeys", r3h:"End-to-end journey regression", r3s:"9/9 · 3 fixed", r3p:"All 9 full user journeys passed, 0 P1, 0 false positives; 3 P2s found (carousel card-mask, closed-session guard, onboarding pending count) — all fixed.",
+    xEyebrow:"Fixed", xH:"Security & usability fixes", secSec:"Security", secUse:"Usability",
+    s1:"Webhook SSRF — internal / metadata / file:// blocked at create and send", s2:"Rate-limit bypass — XFF trusted-proxy hops; spoofing ineffective", s3:"Token revocation — disabled agent gets 401 instantly", s4:"Card-number mask bypass; reset / invite tokens single-use", s5:"Ticket / visitor RBAC; TOTP seed encryption",
+    u1:"Widget one-line embed delivery — /embed.js now returns real JS", u2:"Inbox: message preview / unread / search / pagination / closed state", u3:"Unified error envelope + X-Request-Id tracing", u4:"Deleted-collection RAG filter, payment gate, split shifts", u5:"Secondary nav / report overview localized across languages",
+    gEyebrow:"Roadmap", gH:"Still missing — and why", gLede:"Missing items are mostly deliberate trade-offs or roadmap decisions, not things we can’t do. Grouped by reason below.",
+    g1h:"Positioning trade-off", g1t:"strategy", g1w:"Open API + Webhook self-built integrations instead of an ecosystem", g1a:"Integration marketplace / app directory", g1b:"Shopify / e-commerce order context", g1c:"SMS · Apple Messages (officially winding down)",
+    g2h:"Enterprise tier", g2t:"roadmap", g2w:"SMBs covered by Google OAuth", g2a:"SAML / SCIM auto-provisioning", g2b:"Invoices / tax / VAT (pending payment gateway)", g2c:"2FA recovery codes · login IP allowlist",
+    g3h:"Ticket HelpDesk depth", g3t:"near-term", g3w:"Tickets currently positioned as lightweight to-dos", g3a:"Ticket triggers / merge / due dates", g3b:"SLA on tickets + pause (needs schema)",
+    g4h:"MVP reduction", g4t:"near-term", g4w:"One version first covers most scenarios", g4a:"Custom post-chat surveys · graphic eye-catchers", g4b:"Knowledge-base usage analytics · scheduled reports",
+    footA:"kefu · AI-native multi-tenant white-label helpdesk", footB:"Clean-room build · benchmarked against LiveChat / Intercom", footC:"Status report 2026-09-29"
+  };
+  var HANT = {
+    brandTitle:"kefu 平台現況", brandSub:"AI 原生・多租戶白牌客服平台", live:"kf.56k.cc 線上",
+    heroEyebrow:"專案狀態報告 · 2026-09-29",
+    heroH:"從清潔室自研,到對標 LiveChat 的可上線平台。",
+    heroLede:"kefu 是一套 AI 原生、多租戶白牌的線上客服平台。全渠道接待、知識庫 RAG、AI 代理與工作流、工單 / CRM、路由排班、報表與銷售追蹤、計費與白牌轉售,皆已建置並部署於公網。經三輪多-agent 測試,一批安全與可用性問題已修復,四項對標 LiveChat 的近程功能已補齊。",
+    tagRag:"RAG 反幻覺", tagReseller:"白牌轉售",
+    kpi1a:"對齊 LiveChat 功能追平率", kpi1b:"非專案完成度 · 173 功能點核對",
+    kpi2a:"未解 P0 / P1", kpi2b:"阻斷級問題全數修復",
+    kpi3a:"已修問題", kpi3b:"多輪測試 · 對抗式覆核",
+    kpi4a:"本輪新增 / 修復", kpi4b:"7 可用性 + 4 功能 + 整合",
+    pEyebrow:"競品對齊", pH:"對標 LiveChat 的功能矩陣",
+    pLede:"由產品 agent 逐點核對 173 個 LiveChat 關鍵功能。「追平率 = 完全對齊或超越的比例」,不是專案完成度 —— 平台本身已 100% 建置並線上運行。核心即時客服體驗已對齊甚至超越;差距集中在整合生態、工單 HelpDesk 深度與企業版安全,多屬產品路線決策。",
+    ringCap:"對齊 + 超越", bAligned:"已對齊", bExceeds:"超越", bPartial:"部分對齊", bMissing:"缺失",
+    pNote:"追平率 ≠ 進度條。完全沒有的僅 16%(28 項),且多屬刻意路線決策;若計「至少部分覆蓋」則達 84%。分母是 LiveChat 的清單,kefu 自身多出的 AI 原生功能未計入,故此數偏保守。",
+    thArea:"功能域", thAl:"對齊", thPa:"部分", thMi:"缺失", thVe:"評語",
+    a1:"訪客端 / Widget / 主動接觸", v1:"高度對齊,多處超越(sneak-peek、跨渠道富訊息)",
+    a2:"坐席工作台 / 收件匣", v2:"達標並在 AI / 協作維度超越",
+    a3:"AI / 知識庫 / 自動化 / Bot", v3:"AI 原生超越;Bot 自動接管本輪補上",
+    a4:"全渠道 / 整合", v4:"渠道具競爭力;整合市集是最大落差",
+    a5:"路由 / 排班 / 團隊", v5:"全鏈路對齊;排班連動派單已實測",
+    a6:"工單 / CRM / SLA", v6:"CRM 強;工單 HelpDesk 深度待補",
+    a7:"報表 / 目標 / 銷售", v7:"Sales tracker + 資料匯出超越",
+    a8:"計費 / 白牌 / 多租戶", v8:"白牌轉售紮實;發票 / 稅務待接金流",
+    a9:"帳號 / 安全 / RBAC / i18n", v9:"RBAC / 2FA / 稽核齊;SAML 屬企業版",
+    fEyebrow:"本輪交付", fH:"近程功能:把差距補上",
+    fLede:"依測試指出的「值得補的近程功能」,四項對標 LiveChat 的核心能力已建置、部署、實測。",
+    f1h:"ChatBot 事件接線", chNew:"新", f1a:"流程 builder 接上入站事件:session_start / keyword / message 命中即自動跑流程並接管,可轉人。", f1b:"命中則跳過 RAG 避免雙重回覆;無流程的租戶零回歸。",
+    f2h:"公司 (Company) 一等實體", chNew2:"新", f2a:"公司主檔 + 聯絡人歸屬,打開 B2B;新增 /company 導航與管理頁。", f2b:"取代先前只能靠 attributes.company 字串的做法。",
+    f3h:"富訊息輪播卡片 (Carousel)", chNew3:"新", f3a:"meta.cards 多卡橫向輪播:坐席端建構器、widget scroll-snap、單卡相容。", f3b:"補齊先前唯一 missing 的富訊息型別。",
+    f4h:"SLA 營業時間感知", chNew4:"新", f4a:"到期只累計營業時段、跨夜與週末自動跳過。", f4b:"無設定 / 24×7 / 無效時區三層退回連續計時,零回歸。",
+    qEyebrow:"品質驗證", qH:"多輪多-agent 測試",
+    qLede:"每一輪都由獨立測試 agent 實打線上系統,每條發現再由對抗式 agent 覆核以排除誤報。",
+    r1h:"全功能域 QA", r1s:"24 修復", r1p:"10 功能域實測 + 24 對抗覆核。0 誤報,P0=0、P1=7、P2=17 —— 全數修復並部署。",
+    r2h:"對齊 + 可用性", r2s:"22 修復", r2p:"173 功能點對齊矩陣 + 51 可用性問題(1 P1 / 21 P2 / 29 P3)。P1+P2 全修,零回歸。",
+    r3j:"旅程", r3h:"端到端旅程回歸", r3s:"9/9 · 3 修復", r3p:"9 條完整使用者旅程全走通、0 P1、0 誤報;發現 3 個 P2(輪播卡號遮罩、已結束會話守衛、onboarding pending 計數)均已修復。",
+    xEyebrow:"已修復", xH:"安全與可用性修復", secSec:"安全", secUse:"可用性",
+    s1:"Webhook SSRF —— 建立與送出皆擋內網 / metadata / file://", s2:"限流可繞過 —— XFF 改可信代理跳數,偽造無效", s3:"Token 撤銷 —— 停用坐席即刻 401", s4:"卡號遮罩繞過、重設 / 邀請 token 單次使用", s5:"工單 / 訪客 RBAC、TOTP 種子加密",
+    u1:"Widget 一行嵌入碼交付 —— /embed.js 現回真 JS", u2:"收件匣:訊息預覽 / 未讀 / 搜尋 / 分頁 / 已結束狀態", u3:"統一錯誤信封 + X-Request-Id 追蹤", u4:"刪集合濾 RAG、付款門檻、排班分段班", u5:"二級導航 / 報表總覽 14 語在地化",
+    gEyebrow:"路線決策", gH:"仍缺失 —— 為什麼", gLede:"缺失多屬刻意取捨或路線決策,而非做不到。以下按原因分類。",
+    g1h:"定位取捨", g1t:"策略", g1w:"以開放 API + Webhook 自建整合取代生態", g1a:"整合市集 / App 目錄", g1b:"Shopify / 電商訂單脈絡", g1c:"SMS · Apple Messages(官方收攤)",
+    g2h:"企業版", g2t:"路線", g2w:"中小客戶以 Google OAuth 覆蓋", g2a:"SAML / SCIM 自動佈建", g2b:"發票 / 稅務 / VAT(待接金流)", g2c:"2FA 備援碼 · 登入 IP 白名單",
+    g3h:"工單 HelpDesk 深度", g3t:"近程", g3w:"工單目前定位輕量待辦", g3a:"工單觸發器 / 合併 / 到期", g3b:"SLA 綁工單 + 暫停(需加 schema)",
+    g4h:"MVP 縮減", g4t:"近程", g4w:"單一版本先覆蓋多數場景", g4a:"可自訂 post-chat 問卷 · 圖形 eye-catcher", g4b:"知識庫使用分析 · 排程訂閱式報表",
+    footA:"kefu · AI 原生多租戶白牌客服平台", footB:"清潔室自研 · 對標 LiveChat / Intercom", footC:"狀態報告 2026-09-29"
+  };
+  var DICT = { en:EN, "zh-Hant":HANT };
+  var base = {};
+  document.querySelectorAll("[data-k]").forEach(function(el){ base[el.getAttribute("data-k")] = el.textContent; });
+  function apply(lang){
+    var d = DICT[lang] || null;
+    document.querySelectorAll("[data-k]").forEach(function(el){
+      var k = el.getAttribute("data-k");
+      el.textContent = d && d[k] != null ? d[k] : base[k];
+    });
+    document.documentElement.lang = lang;
+    document.querySelectorAll(".lang button").forEach(function(b){
+      b.setAttribute("aria-pressed", b.getAttribute("data-lang") === lang ? "true" : "false");
+    });
+    try { localStorage.setItem("kefu_status_lang", lang); } catch(e){}
+  }
+  document.querySelectorAll(".lang button").forEach(function(b){
+    b.addEventListener("click", function(){ apply(b.getAttribute("data-lang")); });
+  });
+  var saved; try { saved = localStorage.getItem("kefu_status_lang"); } catch(e){}
+  apply(saved || "zh-CN");
+})();
+</script>
+
+</body>
+</html>

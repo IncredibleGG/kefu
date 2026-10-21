@@ -1,0 +1,16 @@
+{
+  "name": "kefu-widget",
+  "version": "0.1.0",
+  "private": true,
+  "description": "訪客前台聊天 widget(嵌入式)——發訊給 kefu 客服系統、即時收 AI/真人回覆",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build && node scripts/postbuild.mjs",
+    "preview": "vite preview --port 5174"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2"
+  }
+}

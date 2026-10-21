@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>kefu 功能总览</title>
+<meta name="description" content="kefu —— AI 原生、多租户白牌在线客服平台的完整功能介绍(真实产品截图)。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  :root{
+    color-scheme:light;
+    --bg:#faf7f2; --surface:#ffffff; --surface-2:#f4efe7; --ink:#171310; --ink-2:#5b514a;
+    --muted:#938779; --line:#e8e0d4; --line-2:#f0ebe2;
+    --accent:#5b4ef0; --accent-ink:#3d31c9; --accent-soft:#ecebff;
+    --warm:#d9663d; --warm-soft:#fbeadf; --sky:#2f8fd4; --sky-soft:#e2f0fa;
+    --ok:#1f9d64; --ok-soft:#e4f6ec;
+    --shadow:0 1px 2px rgba(23,19,16,.04),0 12px 30px -16px rgba(23,19,16,.18);
+    --shadow-lg:0 2px 4px rgba(23,19,16,.05),0 30px 60px -24px rgba(23,19,16,.3);
+    --radius:18px;
+    --display:"Fraunces",Georgia,serif;
+    --body:"IBM Plex Sans",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme:dark;
+      --bg:#141110; --surface:#1e1a17; --surface-2:#262019; --ink:#f4efe8; --ink-2:#c3b6a8;
+      --muted:#8a7d6f; --line:#302a23; --line-2:#241f1a;
+      --accent:#a99dff; --accent-ink:#c3baff; --accent-soft:#241f3d;
+      --warm:#f0895f; --warm-soft:#3a231a; --sky:#6bb9ec; --sky-soft:#152a38;
+      --ok:#4bd08c; --ok-soft:#123024;
+      --shadow:0 1px 2px rgba(0,0,0,.35),0 14px 34px -18px rgba(0,0,0,.7);
+      --shadow-lg:0 2px 6px rgba(0,0,0,.4),0 36px 70px -28px rgba(0,0,0,.85);
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#141110; --surface:#1e1a17; --surface-2:#262019; --ink:#f4efe8; --ink-2:#c3b6a8;
+    --muted:#8a7d6f; --line:#302a23; --line-2:#241f1a;
+    --accent:#a99dff; --accent-ink:#c3baff; --accent-soft:#241f3d;
+    --warm:#f0895f; --warm-soft:#3a231a; --sky:#6bb9ec; --sky-soft:#152a38;
+    --ok:#4bd08c; --ok-soft:#123024;
+    --shadow:0 1px 2px rgba(0,0,0,.35),0 14px 34px -18px rgba(0,0,0,.7);
+    --shadow-lg:0 2px 6px rgba(0,0,0,.4),0 36px 70px -28px rgba(0,0,0,.85);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  img,svg{max-width:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--body);line-height:1.55;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto;padding-inline:22px;padding-block:0}
+  a{color:var(--accent-ink);text-underline-offset:3px}
+  h1,h2,h3{font-family:var(--display);font-weight:600;margin:0;letter-spacing:-.01em;text-wrap:balance}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink)}
+
+  header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:30;background:color-mix(in srgb,var(--bg) 84%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .top .wrap{display:flex;align-items:center;gap:12px;padding-block:13px;flex-wrap:wrap}
+  .logo{width:32px;height:32px;border-radius:9px;background:var(--ink);display:grid;place-items:center;color:var(--bg);font-family:var(--display);font-weight:700;font-size:17px;flex:none}
+  .brand{font-family:var(--display);font-weight:600;font-size:17px}
+  .top-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .lang{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px}
+  .lang button{font-family:var(--mono);font-size:12px;color:var(--ink-2);background:none;border:none;padding:5px 10px;border-radius:999px;cursor:pointer;line-height:1}
+  .lang button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+  .cta{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:500;color:var(--bg);background:var(--accent);text-decoration:none;padding:8px 14px;border-radius:999px}
+
+  .hero{padding-block:52px 26px}
+  .herogrid{display:grid;grid-template-columns:1.02fr 1.12fr;gap:40px;align-items:center}
+  .hero .eyebrow{margin-bottom:16px}
+  .hero h1{font-size:clamp(32px,5.2vw,54px);line-height:1.03;font-weight:600;letter-spacing:-.025em}
+  .hero h1 em{font-style:italic;color:var(--accent-ink)}
+  .hero p{font-size:clamp(15px,1.5vw,18px);color:var(--ink-2);max-width:54ch;margin-top:20px}
+  .heroactions{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px;align-items:center}
+  .cta.lg{padding:12px 20px;font-size:15px}
+  .ghost{display:inline-flex;align-items:center;gap:7px;font-size:14px;color:var(--ink);text-decoration:none;padding:12px 18px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+
+  /* 浏览器框 —— 包裹真实产品截图 */
+  .browser{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--shadow-lg)}
+  .browser .bar{display:flex;align-items:center;gap:6px;padding:9px 12px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+  .browser .dot{width:9px;height:9px;border-radius:50%;flex:none}
+  .browser .url{margin-left:8px;font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:3px 10px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .browser img{display:block;width:100%;height:auto}
+  .shotcap{font-size:12.5px;color:var(--muted);margin-top:10px;text-align:center}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-top:40px;background:var(--surface)}
+  .stat{padding:20px;border-right:1px solid var(--line)}
+  .stat:last-child{border-right:none}
+  .stat .n{font-family:var(--display);font-weight:600;font-size:28px;letter-spacing:-.02em;line-height:1}
+  .stat .l{font-size:12.5px;color:var(--muted);margin-top:7px}
+
+  /* 交错展示 */
+  .showcase{padding-block:52px;border-top:1px solid var(--line-2)}
+  .scgrid{display:grid;grid-template-columns:1fr 1.12fr;gap:44px;align-items:center}
+  .showcase:nth-of-type(even) .scvisual{order:-1}
+  .sctext .eyebrow{margin-bottom:12px}
+  .sctext h2{font-size:clamp(23px,3.4vw,30px);font-weight:600}
+  .sctext p.l{color:var(--ink-2);margin-top:12px;font-size:15.5px;max-width:52ch}
+  .sctext ul{list-style:none;margin:18px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
+  .sctext li{display:flex;gap:10px;font-size:14px;color:var(--ink-2);align-items:flex-start}
+  .sctext li b{color:var(--ink);font-weight:600}
+  .tick{color:var(--ok);flex:none;margin-top:3px}
+
+  /* 截图画廊 */
+  .gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:26px}
+  .gcard{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface);box-shadow:var(--shadow)}
+  .gcard .browser{border:none;border-radius:0;box-shadow:none}
+  .gcard .browser .bar{padding:7px 10px}
+  .gcard .cap{padding:12px 15px}
+  .gcard .cap b{font-size:14px;font-family:var(--body);font-weight:600}
+  .gcard .cap p{font-size:12.5px;color:var(--ink-2);margin:4px 0 0}
+
+  /* 更多能力 grid */
+  .more{padding-block:52px;border-top:1px solid var(--line-2)}
+  .more h2{font-size:clamp(23px,3.4vw,30px)}
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:26px}
+  .fcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+  .fcard .ic{width:32px;height:32px;border-radius:9px;background:var(--accent-soft);color:var(--accent-ink);display:grid;place-items:center;font-size:17px;flex:none}
+  .fcard h3{font-family:var(--body);font-weight:600;font-size:15px}
+  .fcard p{font-size:13px;color:var(--ink-2);margin:0}
+
+  .why{padding-block:52px;border-top:1px solid var(--line-2)}
+  .whygrid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:26px}
+  .whycard{padding:22px;border-radius:var(--radius);background:var(--ink);color:var(--bg)}
+  .whycard h3{font-family:var(--display);color:var(--bg);font-size:19px;font-weight:600}
+  .whycard p{font-size:13px;color:color-mix(in srgb,var(--bg) 72%,transparent);margin-top:8px}
+  .whycard .k{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.08em;text-transform:uppercase}
+
+  .closing{padding-block:60px;text-align:center;border-top:1px solid var(--line-2)}
+  .closing h2{font-size:clamp(26px,5vw,40px);font-weight:600}
+  .closing p{color:var(--ink-2);max-width:52ch;margin:16px auto 0;font-size:16px}
+  .closing .heroactions{justify-content:center}
+  footer{padding-block:28px 46px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line)}
+  footer .wrap{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center}
+
+  @media (max-width:860px){
+    .herogrid,.scgrid{grid-template-columns:1fr;gap:26px}
+    .showcase:nth-of-type(even) .scvisual{order:2}
+    .cards,.gallery{grid-template-columns:1fr 1fr}
+    .stats,.whygrid{grid-template-columns:1fr 1fr}
+    .stat:nth-child(2n){border-right:none}
+    .stat:nth-child(2n){border-right:none}
+  }
+  @media (max-width:520px){ .cards,.gallery{grid-template-columns:1fr} .stats,.whygrid{grid-template-columns:1fr} .stat{border-right:none;border-bottom:1px solid var(--line)} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="logo">k</div>
+    <div class="brand">kefu</div>
+    <div class="top-right">
+      <div class="lang" role="group" aria-label="Language">
+        <button data-lang="zh-CN" aria-pressed="true">简中</button>
+        <button data-lang="en" aria-pressed="false">EN</button>
+        <button data-lang="zh-Hant" aria-pressed="false">繁中</button>
+      </div>
+      <a class="cta" href="https://kf.56k.cc" target="_blank" rel="noopener" data-k="navCta">进入平台</a>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="hero">
+    <div class="herogrid">
+      <div>
+        <div class="eyebrow" data-k="heroEyebrow">AI 原生 · 多租户白牌客服平台</div>
+        <h1 data-k="heroH">让 <em>AI</em> 先接待,<br>让坐席只做最难的对话。</h1>
+        <p data-k="heroP">kefu 把全渠道接待、知识库 RAG、AI 代理与流程机器人、工单 CRM、路由排班、报表销售、白牌转售,收进一套可自部署、支持 16 种语言的平台。以下皆为真实产品截图。</p>
+        <div class="heroactions">
+          <a class="cta lg" href="https://kf.56k.cc" target="_blank" rel="noopener" data-k="heroCta1">立即体验</a>
+          <a class="ghost" href="https://kf.56k.cc/status.html" target="_blank" rel="noopener" data-k="heroCta2">平台现况 →</a>
+        </div>
+      </div>
+      <div>
+        <div class="browser">
+          <div class="bar"><span class="dot" style="background:#ec6a5e"></span><span class="dot" style="background:#f4bf4f"></span><span class="dot" style="background:#61c454"></span><span class="url">kf.56k.cc/workspace</span></div>
+          <img src="shots/workspace.png" width="1440" height="900" alt="kefu 坐席工作台:三栏式收件箱、AI 信心与来源引用、内部备注、AI 回覆建议、AI 访客画像">
+        </div>
+        <div class="shotcap" data-k="capHero">坐席工作台 · AI 带信心与来源引用、AI 回覆建议、自动生成访客画像</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n">16</div><div class="l" data-k="st1">介面语言(含 RTL)</div></div>
+      <div class="stat"><div class="n">5+</div><div class="l" data-k="st2">接待渠道</div></div>
+      <div class="stat"><div class="n" data-k="st3n">AI 原生</div><div class="l" data-k="st3">RAG 反幻觉 + 流程机器人</div></div>
+      <div class="stat"><div class="n" data-k="st4n">白牌</div><div class="l" data-k="st4">多租户 · 可转售</div></div>
+    </div>
+  </section>
+
+  <!-- 01 全渠道 -->
+  <section class="showcase">
+    <div class="scgrid">
+      <div class="sctext">
+        <div class="eyebrow">01 — <span data-k="s1h">全渠道接待</span></div>
+        <h2 data-k="s1t">一个收件箱,接住所有对话。</h2>
+        <p class="l" data-k="s1l">网站挂件、Telegram、WhatsApp、Email、Facebook 汇入同一个收件箱,跨渠道统一访客身份与回覆。一行嵌入码即可上线网站客服。</p>
+        <ul>
+          <li><span class="tick">✓</span><span data-k="s1a"><b>网站聊天挂件</b> —— 一行嵌入码上线,即时 WebSocket、可自订外观。</span></li>
+          <li><span class="tick">✓</span><span data-k="s1b"><b>富讯息跨渠道原生映射</b> —— 卡片按钮在各渠道原生呈现,非退化文字。</span></li>
+          <li><span class="tick">✓</span><span data-k="s1c"><b>Email 工单化</b> —— 邮件转为可追踪的对话与工单。</span></li>
+        </ul>
+      </div>
+      <div class="scvisual">
+        <div class="browser">
+          <div class="bar"><span class="dot" style="background:#ec6a5e"></span><span class="dot" style="background:#f4bf4f"></span><span class="dot" style="background:#61c454"></span><span class="url">kf.56k.cc/channels</span></div>
+          <img loading="lazy" src="shots/channels.png" width="1440" height="900" alt="全渠道接入:网站 Widget、WhatsApp、Telegram、Email 连接开关与一行嵌入码">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 AI -->
+  <section class="showcase">
+    <div class="scgrid">
+      <div class="sctext">
+        <div class="eyebrow">02 — <span data-k="s2h">AI 智能</span></div>
+        <h2 data-k="s2t">基于你的知识库回答,答不好自动转人。</h2>
+        <p class="l" data-k="s2l">不是套壳的 AI。RAG 依你的内容作答并附来源,信心低于门槛自动转真人;可视化流程机器人自动接管常见问题。</p>
+        <ul>
+          <li><span class="tick">✓</span><span data-k="s2a"><b>知识库 RAG 反幻觉</b> —— 文件 / 网页爬取 / 问答对,答案附来源。</span></li>
+          <li><span class="tick">✓</span><span data-k="s2b"><b>信心门槛自动转人</b> —— 可调阈值,答不好不硬答、直接转真人。</span></li>
+          <li><span class="tick">✓</span><span data-k="s2c"><b>坐席 AI 助手</b> —— 润饰回覆、建议回覆、自动建议标签、AI 洞察。</span></li>
+        </ul>
+      </div>
+      <div class="scvisual">
+        <div class="browser">
+          <div class="bar"><span class="dot" style="background:#ec6a5e"></span><span class="dot" style="background:#f4bf4f"></span><span class="dot" style="background:#61c454"></span><span class="url">kf.56k.cc/ai</span></div>
+          <img loading="lazy" src="shots/ai.png" width="1440" height="900" alt="AI 代理设定:掛接知识库、选模型、信心门槛滑杆、低于门槛自动转真人">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 报表 -->
+  <section class="showcase">
+    <div class="scgrid">
+      <div class="sctext">
+        <div class="eyebrow">03 — <span data-k="s4h">报表 · 目标 · 销售</span></div>
+        <h2 data-k="s4t">从服务质量到成交贡献,数据说话。</h2>
+        <p class="l" data-k="s4l">运营报表、满意度 CSAT、AI 洞察;目标与销售追踪把成交归因到坐席,含业绩排行榜,支持 CSV 导出。</p>
+        <ul>
+          <li><span class="tick">✓</span><span data-k="s4a"><b>运营报表</b> —— 会话量、AI 解决率、坐席绩效、佇列等待、CSAT。</span></li>
+          <li><span class="tick">✓</span><span data-k="s4b"><b>目标 · 销售追踪</b> —— 网址 / 事件 / 手动目标,坐席业绩排行。</span></li>
+          <li><span class="tick">✓</span><span data-k="s4c"><b>AI 洞察</b> —— 热门问题、情绪与改进建议自动聚合。</span></li>
+        </ul>
+      </div>
+      <div class="scvisual">
+        <div class="browser">
+          <div class="bar"><span class="dot" style="background:#ec6a5e"></span><span class="dot" style="background:#f4bf4f"></span><span class="dot" style="background:#61c454"></span><span class="url">kf.56k.cc/reports</span></div>
+          <img loading="lazy" src="shots/reports.png" width="1440" height="900" alt="报表总览:会话量、AI 解决率、CSAT、14 天趋势图、渠道分布与坐席绩效">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 插件市集 / 整合 -->
+  <section class="showcase">
+    <div class="scgrid">
+      <div class="sctext">
+        <div class="eyebrow">04 — <span data-k="s5h">插件市集 · 整合</span></div>
+        <h2 data-k="s5t">第一方插件,一个开关即接入。</h2>
+        <p class="l" data-k="s5l">所有整合皆由我们自研并集成进市集,按租户以开关控制、依需填入金鑰即可启用 —— 无需自己写对接。</p>
+        <ul>
+          <li><span class="tick">✓</span><span data-k="s5a"><b>电商订单脉络</b> —— Shopify 订单与消费历史带进会话侧栏,接手即掌握下单脉络。</span></li>
+          <li><span class="tick">✓</span><span data-k="s5b"><b>团队通知 · 事件转发</b> —— Slack 通知、通用事件 JSON 转发到你的端点。</span></li>
+          <li><span class="tick">✓</span><span data-k="s5c"><b>营销与分析</b> —— Google Analytics 事件上报、Mailchimp 联络人同步。</span></li>
+        </ul>
+      </div>
+      <div class="scvisual">
+        <div class="browser">
+          <div class="bar"><span class="dot" style="background:#ec6a5e"></span><span class="dot" style="background:#f4bf4f"></span><span class="dot" style="background:#61c454"></span><span class="url">kf.56k.cc/settings?tab=integrations</span></div>
+          <img loading="lazy" src="shots/settings_integrations.png" width="1440" height="900" alt="插件市集:Shopify、Slack、事件转发、Google Analytics、Mailchimp 第一方整合开关">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 企业级安全 -->
+  <section class="showcase">
+    <div class="scgrid">
+      <div class="sctext">
+        <div class="eyebrow">05 — <span data-k="s6h">企业级 · 安全与权限</span></div>
+        <h2 data-k="s6t">细到每个动作的权限,面向企业与转售。</h2>
+        <p class="l" data-k="s6l">角色权限(RBAC)细到每个操作码,搭配 2FA、企业 SSO(SAML / Google)、稽核日志、营业时间感知 SLA 与机敏加密,满足企业与白牌转售的合规要求。</p>
+        <ul>
+          <li><span class="tick">✓</span><span data-k="s6a"><b>细粒度 RBAC</b> —— 角色 × 权限码矩阵,指派即生效。</span></li>
+          <li><span class="tick">✓</span><span data-k="s6b"><b>企业 SSO · 2FA · 稽核</b> —— SAML / Google 登录、两步验证、完整稽核日志。</span></li>
+          <li><span class="tick">✓</span><span data-k="s6c"><b>营业时间感知 SLA</b> —— 首回应 / 解决时限只计营业时间,违约告警。</span></li>
+        </ul>
+      </div>
+      <div class="scvisual">
+        <div class="browser">
+          <div class="bar"><span class="dot" style="background:#ec6a5e"></span><span class="dot" style="background:#f4bf4f"></span><span class="dot" style="background:#61c454"></span><span class="url">kf.56k.cc/settings?tab=rbac</span></div>
+          <img loading="lazy" src="shots/settings_rbac.png" width="1440" height="900" alt="角色权限 RBAC:admin / agent / supervisor / reseller 角色与细粒度权限码矩阵">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 截图画廊 -->
+  <section class="more">
+    <div class="eyebrow" data-k="galEyebrow">更多真实界面</div>
+    <h2 data-k="galH">一整套,把客服做成产品。</h2>
+    <div class="gallery">
+      <div class="gcard">
+        <div class="browser"><div class="bar"><span class="dot" style="background:#ec6a5e"></span><span class="dot" style="background:#f4bf4f"></span><span class="dot" style="background:#61c454"></span><span class="url">/knowledge</span></div><img loading="lazy" src="shots/knowledge.png" width="1440" height="900" alt="知识库"></div>
+        <div class="cap"><b data-k="g1h">知识库 · RAG</b><p data-k="g1p">文件 / QA / 网站三型知识库,供 AI 检索与可溯源回答。</p></div>
+      </div>
+      <div class="gcard">
+        <div class="browser"><div class="bar"><span class="dot" style="background:#ec6a5e"></span><span class="dot" style="background:#f4bf4f"></span><span class="dot" style="background:#61c454"></span><span class="url">/tickets</span></div><img loading="lazy" src="shots/tickets.png" width="1440" height="900" alt="工单"></div>
+        <div class="cap"><b data-k="g2h">工单 · CRM</b><p data-k="g2p">工单状态机、联系人 / 公司(B2B),会话一键转工单。</p></div>
+      </div>
+      <div class="gcard">
+        <div class="browser"><div class="bar"><span class="dot" style="background:#ec6a5e"></span><span class="dot" style="background:#f4bf4f"></span><span class="dot" style="background:#61c454"></span><span class="url">/visitors</span></div><img loading="lazy" src="shots/visitors.png" width="1440" height="900" alt="访客"></div>
+        <div class="cap"><b data-k="g3h">访客 · 联系人</b><p data-k="g3p">访客名单、客户档案与标签分群,统一访客身份。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="more" style="border-top:none;padding-top:0">
+    <div class="cards">
+      <div class="fcard"><div class="ic">🎫</div><h3 data-k="m1h">工单 · CRM · SLA</h3><p data-k="m1p">工单状态机、联系人 / 公司(B2B)、营业时间感知 SLA 与违约告警。</p></div>
+      <div class="fcard"><div class="ic">🧭</div><h3 data-k="m2h">路由 · 排班</h3><p data-k="m2p">负载均衡 / 轮询 / 手动派单、技能组、时区感知排班并联动派单。</p></div>
+      <div class="fcard"><div class="ic">⚙️</div><h3 data-k="m3h">自动化 · 主动接触</h3><p data-k="m3p">条件触发自动化规则、主动式讯息、eye-catcher 诱饵气泡。</p></div>
+      <div class="fcard"><div class="ic">🏢</div><h3 data-k="m4h">白牌转售 · 多租户</h3><p data-k="m4p">贴自己品牌转售、下游一键开通、自订网域、独立计费。</p></div>
+      <div class="fcard"><div class="ic">🔐</div><h3 data-k="m5h">安全 · 权限</h3><p data-k="m5p">RBAC、2FA、SSO、稽核日志、机敏加密、SSRF 防护、固定时间比对。</p></div>
+      <div class="fcard"><div class="ic">🔌</div><h3 data-k="m6h">开放 · 自部署</h3><p data-k="m6p">开放 API、Webhook、Docker 一键自部署,数据自主可控。</p></div>
+    </div>
+  </section>
+
+  <section class="why">
+    <div class="eyebrow" data-k="whyEyebrow">为什么选 kefu</div>
+    <h2 style="font-size:clamp(23px,3.4vw,30px);margin-top:8px" data-k="whyH">四个别人给不了的理由。</h2>
+    <div class="whygrid">
+      <div class="whycard"><div class="k">AI-NATIVE</div><h3 data-k="w1h">AI 是地基,不是外挂</h3><p data-k="w1p">RAG 反幻觉、信心门槛转人、流程机器人从设计之初就内建。</p></div>
+      <div class="whycard"><div class="k">WHITE-LABEL</div><h3 data-k="w2h">变成你的产品</h3><p data-k="w2p">多租户、贴牌转售、自订网域与品牌,不只是「用」而是「卖」。</p></div>
+      <div class="whycard"><div class="k">SELF-HOSTED</div><h3 data-k="w3h">数据在你手里</h3><p data-k="w3p">Docker 自部署,资料自主可控,不锁定第三方云。</p></div>
+      <div class="whycard"><div class="k">GLOBAL</div><h3 data-k="w4h">天生全球化</h3><p data-k="w4p">16 种介面语言含 RTL、即时双向翻译,一个团队服务全世界。</p></div>
+    </div>
+  </section>
+
+  <section class="closing">
+    <h2 data-k="closeH">准备好把客服变成增长引擎了吗?</h2>
+    <p data-k="closeP">现在就进入平台亲手试一试,或看看它的即时运行现况。</p>
+    <div class="heroactions">
+      <a class="cta lg" href="https://kf.56k.cc" target="_blank" rel="noopener" data-k="closeCta1">进入 kefu 平台</a>
+      <a class="ghost" href="https://kf.56k.cc/status.html" target="_blank" rel="noopener" data-k="closeCta2">平台现况报告 →</a>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <span data-k="footA">kefu · AI 原生多租户白牌客服平台</span>
+    <span style="color:var(--line)">|</span>
+    <a href="https://kf.56k.cc" target="_blank" rel="noopener">kf.56k.cc</a>
+    <span style="margin-left:auto" data-k="footB">对标 LiveChat / Intercom · 清洁室自研</span>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var EN = {
+    navCta:"Open platform",
+    heroEyebrow:"AI-native · multi-tenant white-label helpdesk",
+    heroH:"Let <em>AI</em> handle first contact,<br>so agents only take the hard ones.",
+    heroP:"kefu brings omnichannel inbox, knowledge-base RAG, AI agents & flow bots, tickets & CRM, routing & scheduling, reports & sales, and white-label reselling into one self-hostable platform in 16 languages. Every image below is a real product screenshot.",
+    heroCta1:"Try it now", heroCta2:"Platform status →",
+    capHero:"Agent workspace · AI answers with confidence & source citation, AI reply suggestions, auto-generated visitor profile",
+    st1:"UI languages (incl. RTL)", st2:"support channels", st3n:"AI-native", st3:"anti-hallucination RAG + flow bot", st4n:"White-label", st4:"multi-tenant · resellable",
+    s1h:"Omnichannel", s1t:"One inbox that catches every conversation.", s1l:"Website widget, Telegram, WhatsApp, Email and Facebook flow into one inbox, with unified visitor identity across channels. Go live with a single embed line.",
+    s1a:"<b>Website chat widget</b> — live with one embed line, real-time WebSocket, customizable look.", s1b:"<b>Cross-channel rich messages</b> — card buttons render natively on each channel, not degraded to text.", s1c:"<b>Email ticketing</b> — email becomes trackable conversations and tickets.",
+    s2h:"AI intelligence", s2t:"Answers from your knowledge base; hands off when unsure.", s2l:"Not a thin AI wrapper. RAG answers from your content with sources and hands off to a human when confidence drops below your threshold; a visual flow bot auto-handles common questions.",
+    s2a:"<b>Knowledge-base RAG, anti-hallucination</b> — docs / crawl / Q&A, answers cite sources.", s2b:"<b>Confidence-gated handoff</b> — tunable threshold; when unsure it hands off instead of guessing.", s2c:"<b>Agent AI copilot</b> — reply polish, suggested replies, auto-tags, AI insights.",
+    s4h:"Reports · goals · sales", s4t:"From service quality to revenue — let data speak.", s4l:"Operations reports, CSAT, AI insights; goals & sales tracking attribute conversions to agents, with a leaderboard and CSV export.",
+    s4a:"<b>Operations reports</b> — chat volume, AI resolution rate, agent performance, queue wait, CSAT.", s4b:"<b>Goals · sales tracking</b> — URL / event / manual goals, agent sales leaderboard.", s4c:"<b>AI insights</b> — popular questions, sentiment and suggestions auto-aggregated.",
+    s5h:"Plugin marketplace · integrations", s5t:"First-party plugins — one toggle to connect.", s5l:"Every integration is built by us and shipped into the marketplace, controlled per tenant with a toggle and enabled by filling in keys — no custom wiring needed.",
+    s5a:"<b>E-commerce order context</b> — Shopify orders & history in the conversation sidebar the moment you take over.", s5b:"<b>Team notify · event forwarding</b> — Slack alerts, generic event JSON forwarded to your endpoint.", s5c:"<b>Marketing & analytics</b> — Google Analytics event reporting, Mailchimp contact sync.",
+    s6h:"Enterprise · security & access", s6t:"Permissions down to each action — built for enterprise & reselling.", s6l:"Role-based access (RBAC) down to each permission code, plus 2FA, enterprise SSO (SAML / Google), audit log, business-hours-aware SLA and secret encryption — meeting enterprise and white-label compliance needs.",
+    s6a:"<b>Fine-grained RBAC</b> — role × permission-code matrix, effective on assignment.", s6b:"<b>Enterprise SSO · 2FA · audit</b> — SAML / Google login, two-factor, full audit log.", s6c:"<b>Business-hours SLA</b> — first-response / resolution deadlines count business hours only, with breach alerts.",
+    galEyebrow:"More real screens", galH:"A full suite — to make support your product.",
+    g1h:"Knowledge base · RAG", g1p:"Docs / QA / website — three knowledge types for AI retrieval and cited answers.",
+    g2h:"Tickets · CRM", g2p:"Ticket state machine, contacts / company (B2B); one-click conversation-to-ticket.",
+    g3h:"Visitors · contacts", g3p:"Visitor list, customer profiles and tag segments; unified visitor identity.",
+    moreEyebrow:"More capabilities", moreH:"A full suite — to make support your product.",
+    m1h:"Tickets · CRM · SLA", m1p:"Ticket state machine, contacts / company (B2B), business-hours SLA with breach alerts.",
+    m2h:"Routing · scheduling", m2p:"Load-balanced / round-robin / manual assignment, skill groups, timezone-aware scheduling wired to dispatch.",
+    m3h:"Automation · proactive", m3p:"Condition-triggered rules, proactive messages, eye-catcher bubbles.",
+    m4h:"White-label · multi-tenant", m4p:"Resell under your brand, one-click downstream onboarding, custom domains, independent billing.",
+    m5h:"Security · permissions", m5p:"RBAC, 2FA, SSO, audit log, secret encryption, SSRF protection, constant-time comparison.",
+    m6h:"Open · self-hosted", m6p:"Open API, Webhooks, one-command Docker self-hosting — you own the data.",
+    whyEyebrow:"Why kefu", whyH:"Four things others can’t give you.",
+    w1h:"AI is the foundation, not a plugin", w1p:"Anti-hallucination RAG, confidence-gated handoff and flow bots are built in from day one.",
+    w2h:"Make it your product", w2p:"Multi-tenant, white-label reselling, custom domains and branding — not just “use” but “sell”.",
+    w3h:"Your data, your hands", w3p:"Docker self-hosting; data stays under your control, no third-party cloud lock-in.",
+    w4h:"Global by design", w4p:"16 UI languages incl. RTL and real-time two-way translation — one team serves the world.",
+    closeH:"Ready to turn support into a growth engine?", closeP:"Open the platform and try it yourself, or see how it’s running right now.",
+    closeCta1:"Open the kefu platform", closeCta2:"Platform status report →",
+    footA:"kefu · AI-native multi-tenant white-label helpdesk", footB:"Benchmarked against LiveChat / Intercom · clean-room build"
+  };
+  var HANT = {
+    navCta:"進入平台",
+    heroEyebrow:"AI 原生 · 多租戶白牌客服平台",
+    heroH:"讓 <em>AI</em> 先接待,<br>讓坐席只做最難的對話。",
+    heroP:"kefu 把全渠道接待、知識庫 RAG、AI 代理與流程機器人、工單 CRM、路由排班、報表銷售、白牌轉售,收進一套可自部署、支援 16 種語言的平台。以下皆為真實產品截圖。",
+    heroCta1:"立即體驗", heroCta2:"平台現況 →",
+    capHero:"坐席工作台 · AI 帶信心與來源引用、AI 回覆建議、自動生成訪客畫像",
+    st1:"介面語言(含 RTL)", st2:"接待渠道", st3n:"AI 原生", st3:"RAG 反幻覺 + 流程機器人", st4n:"白牌", st4:"多租戶 · 可轉售",
+    s1h:"全渠道接待", s1t:"一個收件匣,接住所有對話。", s1l:"網站掛件、Telegram、WhatsApp、Email、Facebook 匯入同一個收件匣,跨渠道統一訪客身份與回覆。一行嵌入碼即可上線網站客服。",
+    s1a:"<b>網站聊天掛件</b> —— 一行嵌入碼上線,即時 WebSocket、可自訂外觀。", s1b:"<b>富訊息跨渠道原生映射</b> —— 卡片按鈕在各渠道原生呈現,非退化文字。", s1c:"<b>Email 工單化</b> —— 郵件轉為可追蹤的對話與工單。",
+    s2h:"AI 智能", s2t:"基於你的知識庫回答,答不好自動轉人。", s2l:"不是套殼的 AI。RAG 依你的內容作答並附來源,信心低於門檻自動轉真人;可視化流程機器人自動接管常見問題。",
+    s2a:"<b>知識庫 RAG 反幻覺</b> —— 文件 / 網頁爬取 / 問答對,答案附來源。", s2b:"<b>信心門檻自動轉人</b> —— 可調閾值,答不好不硬答、直接轉真人。", s2c:"<b>坐席 AI 助手</b> —— 潤飾回覆、建議回覆、自動建議標籤、AI 洞察。",
+    s4h:"報表 · 目標 · 銷售", s4t:"從服務品質到成交貢獻,數據說話。", s4l:"營運報表、滿意度 CSAT、AI 洞察;目標與銷售追蹤把成交歸因到坐席,含業績排行榜,支援 CSV 匯出。",
+    s4a:"<b>營運報表</b> —— 會話量、AI 解決率、坐席績效、佇列等待、CSAT。", s4b:"<b>目標 · 銷售追蹤</b> —— 網址 / 事件 / 手動目標,坐席業績排行。", s4c:"<b>AI 洞察</b> —— 熱門問題、情緒與改進建議自動聚合。",
+    s5h:"插件市集 · 整合", s5t:"第一方插件,一個開關即接入。", s5l:"所有整合皆由我們自研並集成進市集,按租戶以開關控制、依需填入金鑰即可啟用 —— 無需自己寫對接。",
+    s5a:"<b>電商訂單脈絡</b> —— Shopify 訂單與消費歷史帶進會話側欄,接手即掌握下單脈絡。", s5b:"<b>團隊通知 · 事件轉發</b> —— Slack 通知、通用事件 JSON 轉發到你的端點。", s5c:"<b>行銷與分析</b> —— Google Analytics 事件上報、Mailchimp 聯絡人同步。",
+    s6h:"企業級 · 安全與權限", s6t:"細到每個動作的權限,面向企業與轉售。", s6l:"角色權限(RBAC)細到每個操作碼,搭配 2FA、企業 SSO(SAML / Google)、稽核日誌、營業時間感知 SLA 與機敏加密,滿足企業與白牌轉售的合規要求。",
+    s6a:"<b>細粒度 RBAC</b> —— 角色 × 權限碼矩陣,指派即生效。", s6b:"<b>企業 SSO · 2FA · 稽核</b> —— SAML / Google 登入、兩步驗證、完整稽核日誌。", s6c:"<b>營業時間感知 SLA</b> —— 首回應 / 解決時限只計營業時間,違約告警。",
+    galEyebrow:"更多真實介面", galH:"一整套,把客服做成產品。",
+    g1h:"知識庫 · RAG", g1p:"文件 / QA / 網站三型知識庫,供 AI 檢索與可溯源回答。",
+    g2h:"工單 · CRM", g2p:"工單狀態機、聯絡人 / 公司(B2B),會話一鍵轉工單。",
+    g3h:"訪客 · 聯絡人", g3p:"訪客名單、客戶檔案與標籤分群,統一訪客身份。",
+    moreEyebrow:"更多能力", moreH:"還有一整套,把客服做成產品。",
+    m1h:"工單 · CRM · SLA", m1p:"工單狀態機、聯絡人 / 公司(B2B)、營業時間感知 SLA 與違約告警。",
+    m2h:"路由 · 排班", m2p:"負載均衡 / 輪詢 / 手動派單、技能組、時區感知排班並連動派單。",
+    m3h:"自動化 · 主動接觸", m3p:"條件觸發自動化規則、主動式訊息、eye-catcher 誘餌氣泡。",
+    m4h:"白牌轉售 · 多租戶", m4p:"貼自己品牌轉售、下游一鍵開通、自訂網域、獨立計費。",
+    m5h:"安全 · 權限", m5p:"RBAC、2FA、SSO、稽核日誌、機敏加密、SSRF 防護、固定時間比對。",
+    m6h:"開放 · 自部署", m6p:"開放 API、Webhook、Docker 一鍵自部署,資料自主可控。",
+    whyEyebrow:"為什麼選 kefu", whyH:"四個別人給不了的理由。",
+    w1h:"AI 是地基,不是外掛", w1p:"RAG 反幻覺、信心門檻轉人、流程機器人從設計之初就內建。",
+    w2h:"變成你的產品", w2p:"多租戶、貼牌轉售、自訂網域與品牌,不只是「用」而是「賣」。",
+    w3h:"資料在你手裡", w3p:"Docker 自部署,資料自主可控,不鎖定第三方雲。",
+    w4h:"天生全球化", w4p:"16 種介面語言含 RTL、即時雙向翻譯,一個團隊服務全世界。",
+    closeH:"準備好把客服變成增長引擎了嗎?", closeP:"現在就進入平台親手試一試,或看看它的即時運行現況。",
+    closeCta1:"進入 kefu 平台", closeCta2:"平台現況報告 →",
+    footA:"kefu · AI 原生多租戶白牌客服平台", footB:"對標 LiveChat / Intercom · 清潔室自研"
+  };
+  var DICT = { en:EN, "zh-Hant":HANT };
+  var base = {};
+  document.querySelectorAll("[data-k]").forEach(function(el){ base[el.getAttribute("data-k")] = el.innerHTML; });
+  function apply(lang){
+    var d = DICT[lang] || null;
+    document.querySelectorAll("[data-k]").forEach(function(el){
+      var k = el.getAttribute("data-k");
+      el.innerHTML = d && d[k] != null ? d[k] : base[k];
+    });
+    document.documentElement.lang = lang;
+    document.querySelectorAll(".lang button").forEach(function(b){
+      b.setAttribute("aria-pressed", b.getAttribute("data-lang") === lang ? "true" : "false");
+    });
+    try { localStorage.setItem("kefu_feat_lang", lang); } catch(e){}
+  }
+  document.querySelectorAll(".lang button").forEach(function(b){
+    b.addEventListener("click", function(){ apply(b.getAttribute("data-lang")); });
+  });
+  var saved; try { saved = localStorage.getItem("kefu_feat_lang"); } catch(e){}
+  apply(saved || "zh-CN");
+})();
+</script>
+
+</body>
+</html>
