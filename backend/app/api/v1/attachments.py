@@ -27,7 +27,7 @@ from app.core.deps import CurrentStaff, DbSession
 from app.core.response import err, ok
 from app.models.conversation import Message, Session
 from app.services import channel_out, realtime, storage
-from app.services.conversation import add_message
+from app.services.conversation import add_message, handoff_origin
 
 router = APIRouter()
 logger = logging.getLogger("kefu.attachments.api")
@@ -91,6 +91,7 @@ async def upload_attachment(
 
     # --- 回覆即認領(與文字回覆一致)---
     claimed = session.handler_type != "human" or session.handler_staff_id != staff.staff_id
+    previous_handler = session.handler_staff_id
     if claimed:
         session.handler_type = "human"
         session.handler_staff_id = staff.staff_id
@@ -113,6 +114,9 @@ async def upload_attachment(
         return JSONResponse(status_code=404, content=err("SESSION_NOT_FOUND", "會話不存在"))
 
     # --- 認領事件:讓其他坐席與列表即時更新擁有者 / 狀態 ---
+    # 坐席專用生命週期事件(含 handler_staff_id 等內部坐席 id):只發坐席頻道,
+    # **不進會話頻道**——會話頻道有訪客端(/ws/widget)訂閱,發過去會把坐席 id 洩漏給訪客
+    # (與 conversation.send_message 的回覆即認領一致)。
     if claimed:
         event = realtime.make_event(
             "handoff",
@@ -122,9 +126,9 @@ async def upload_attachment(
                 "handler_type": "human",
                 "handler_staff_id": str(staff.staff_id),
                 "status": session.status,
+                **handoff_origin(staff.staff_id, previous_handler),
             },
         )
-        await realtime.publish(staff.tenant_id, session_id, event)
         await realtime.publish_agents(staff.tenant_id, event)
 
     # --- 出站送達訪客(既有出站 seam)---

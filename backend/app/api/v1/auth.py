@@ -12,9 +12,11 @@
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import ipaddress
+import json
 import logging
 import os
 import re
@@ -36,12 +38,13 @@ from app.core.config import settings
 from app.core.deps import CurrentStaff, DbSession
 from app.core.response import err, ok
 from app.core.security import create_access_token, hash_password, verify_password
+from app.core.urls import external_base_url, forwarded_scheme
 from app.models.conversation import Channel
 from app.models.iam import Permission, Role, Staff, role_permission, staff_role
 from app.models.settings import TenantSettings
 from app.models.tenancy import Tenant
 from app.services import plans as plan_svc
-from app.services import totp
+from app.services import realtime, totp
 from app.services.iam import seed_default_permissions
 
 logger = logging.getLogger("kefu.auth")
@@ -79,6 +82,15 @@ class LoginIn(BaseModel):
     password: str | None = None
     otp: str | None = None
     challenge: str | None = None
+    # 選填租戶 slug:同一 email + 密碼對到多個租戶時,客戶端依 requires_tenant_selection
+    # 回傳的清單選定後帶此欄重送;有值時只在該租戶內比對。
+    tenant: str | None = Field(default=None, max_length=100)
+
+
+class SsoExchangeIn(BaseModel):
+    # 原生 SSO(PKCE)第二步:以回呼拿到的一次性 code + App 端保存的 code_verifier 換正式 token。
+    code: str = Field(min_length=1, max_length=256)
+    code_verifier: str = Field(min_length=1, max_length=256)
 
 
 class ChangePasswordIn(BaseModel):
@@ -402,30 +414,66 @@ async def _issue_token(db, staff: Staff) -> dict:
     )
 
 
-async def _resolve_login_staff(db, body: LoginIn) -> Staff | None:
+def _normalize_email(email: str | None) -> str:
+    """email 比對用的正規化:去頭尾空白 + 轉小寫(登入 / 忘記密碼 / SSO 一致不分大小寫)。"""
+    return (email or "").strip().lower()
+
+
+async def _resolve_login_staff(db, body: LoginIn) -> tuple[Staff | None, list[dict]]:
     """定位登入坐席:優先用 2FA challenge(免再送密碼),否則以 email + 密碼逐一比對。
 
-    email 僅在租戶內唯一,同一 email 可能存在多個租戶,故以密碼比對定位正確帳號,
-    避免 scalar_one_or_none 在多筆時拋 MultipleResultsFound → 500。
+    回傳 ``(staff, tenants)``:
+    - 唯一命中 → ``(staff, [])``;
+    - 查無 / 密碼不符 → ``(None, [])``;
+    - 未帶 tenant 且密碼在**多個租戶**都正確 → ``(None, [{slug, name}, …])``,由呼叫端回
+      ``requires_tenant_selection``。租戶清單**只在密碼驗過之後**才揭露,避免以 email 枚舉租戶。
+
+    email 僅在租戶內唯一且比對不分大小寫(func.lower 兩側),同一 email 可能存在多個租戶;
+    以密碼比對定位,避免 scalar_one_or_none 在多筆時拋 MultipleResultsFound → 500。
+    帶 tenant(slug)時只在該租戶內比對。
     """
     if body.challenge:
         payload = _decode_purpose_token(body.challenge, _PURPOSE_2FA)
         if not payload:
-            return None
+            return None, []
         try:
             sid = uuid.UUID(str(payload["sub"]))
         except (KeyError, ValueError):
-            return None
+            return None, []
         return (
             await db.execute(select(Staff).where(Staff.id == sid, Staff.is_active.is_(True)))
-        ).scalar_one_or_none()
+        ).scalar_one_or_none(), []
 
-    if not body.email or not body.password:
-        return None
-    candidates = (
-        await db.execute(select(Staff).where(Staff.email == body.email, Staff.is_active.is_(True)))
-    ).scalars().all()
-    return next((s for s in candidates if verify_password(body.password, s.password_hash)), None)
+    email = _normalize_email(body.email)
+    if not email or not body.password:
+        return None, []
+    stmt = (
+        select(Staff, Tenant)
+        .join(Tenant, Tenant.id == Staff.tenant_id)
+        .where(func.lower(Staff.email) == email, Staff.is_active.is_(True))
+        .order_by(Tenant.name, Staff.created_at)
+    )
+    tenant_slug = (body.tenant or "").strip().lower()
+    if tenant_slug:
+        stmt = stmt.where(func.lower(Tenant.slug) == tenant_slug)
+    rows = (await db.execute(stmt)).all()
+    matched = [(s, t) for s, t in rows if verify_password(body.password, s.password_hash)]
+    if not matched:
+        return None, []
+    if tenant_slug:
+        return matched[0][0], []
+
+    # 未指定租戶:以租戶去重;只對到一個租戶直接登入。多個時優先只看啟用中的租戶
+    # (停用租戶本就無法登入,不必讓使用者選它);全部停用則回第一筆,交由呼叫端回 403。
+    by_tenant: dict = {}
+    for s, t in matched:
+        by_tenant.setdefault(t.id, (s, t))
+    active = [(s, t) for s, t in by_tenant.values() if t.is_active]
+    if len(active) > 1:
+        return None, [{"slug": t.slug, "name": t.name} for _, t in active]
+    if len(active) == 1:
+        return active[0][0], []
+    return matched[0][0], []
 
 
 # =========================================================================== #
@@ -439,13 +487,24 @@ async def login(body: LoginIn, db: DbSession, request: Request):
     - 已啟用 2FA 且未帶 otp:回 ``{requires_2fa: true, challenge}``(不發正式 token)。
       前端可帶 challenge + otp(免重送密碼)或 email + password + otp 再呼叫一次。
     - challenge 僅對已啟用 2FA 的坐席有效,單獨憑 challenge 無 otp 不得登入。
-    - 速率限制:每 IP 5 分鐘 30 次(防撞庫);OTP 每帳號 5 分鐘 10 次(防暴力破解)。
+    - email 不分大小寫;可選帶 ``tenant``(slug)。密碼在多個租戶都正確且未帶 tenant 時回
+      ``{requires_tenant_selection: true, tenants: [{slug, name}]}``(HTTP 200),客戶端帶 tenant 重送。
+    - 速率限制:每 IP+email 5 分鐘 10 次(防單帳號暴力破解)+ 每 IP 5 分鐘 200 次
+      (防撞庫;放寬以容納辦公室共用出口 IP 的上班尖峰);OTP 每帳號 5 分鐘 10 次。
     """
     ip = ratelimit.client_ip(request)
-    if not await ratelimit.hit(f"login-ip:{ip}", limit=30, window_seconds=300):
+    if not await ratelimit.hit(f"login-ip:{ip}", limit=200, window_seconds=300):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too many attempts")
+    email_key = _normalize_email(body.email)[:255]
+    if email_key and not await ratelimit.hit(
+        f"login:{ip}:{email_key}", limit=10, window_seconds=300
+    ):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too many attempts")
 
-    staff = await _resolve_login_staff(db, body)
+    staff, tenant_choices = await _resolve_login_staff(db, body)
+    if tenant_choices:
+        # 密碼已驗過、但對到多個租戶:不發 token,請客戶端選定租戶後帶 tenant 重送
+        return ok({"requires_tenant_selection": True, "tenants": tenant_choices})
     if staff is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
 
@@ -521,6 +580,9 @@ async def me(staff: CurrentStaff, db: DbSession):
     row = (await db.execute(select(Staff).where(Staff.id == staff.staff_id))).scalar_one_or_none()
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="staff not found")
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == row.tenant_id))
+    ).scalar_one_or_none()
     return ok(
         {
             "staff_id": str(row.id),
@@ -530,6 +592,12 @@ async def me(staff: CurrentStaff, db: DbSession):
             "roles": staff.roles,
             # 供前端安全設定頁顯示 2FA 狀態(額外欄位,不影響既有映射)
             "totp_enabled": bool(row.totp_enabled),
+            # 目前所在工作區(原生 App 顯示用;額外欄位)
+            "tenant": (
+                {"id": str(tenant.id), "name": tenant.name, "slug": tenant.slug}
+                if tenant
+                else None
+            ),
         }
     )
 
@@ -646,7 +714,7 @@ async def register(body: RegisterIn, db: DbSession, request: Request):
 # 坐席邀請(email / 連結)
 # =========================================================================== #
 @router.post("/invite")
-async def invite_staff(body: InviteIn, principal: CurrentStaff, db: DbSession):
+async def invite_staff(body: InviteIn, principal: CurrentStaff, db: DbSession, request: Request):
     """管理者邀請坐席:於本租戶建 pending 帳號(隨機密碼、停用、指派角色),回可發送的邀請連結。
 
     - 需 ``staff.manage`` 權限;一律以 principal.tenant_id 作用於本租戶。
@@ -655,7 +723,8 @@ async def invite_staff(body: InviteIn, principal: CurrentStaff, db: DbSession):
     - 帳號先給隨機密碼且 ``is_active=False``(pending),接受邀請設定密碼後才啟用可登入;
       未接受的邀請帳號因停用不會被當成有效坐席。
     - 記錄 invited_at(pending 辨識 + token 版本綁定)。
-    - 簽發 purpose=invite、帶版本 iv 的 7 天短期權杖,回相對路徑 invite_url(/accept-invite?token=…)。
+    - 簽發 purpose=invite、帶版本 iv 的 7 天短期權杖,回相對路徑 invite_url(/accept-invite?token=…)
+      與絕對網址 invite_link(原生 App 無法以 window.location.origin 自行組出可分享連結)。
     - 若租戶已設定 Email 寄送渠道,另寄出含連結的邀請信(寄信失敗只記 log,仍回 invite_url 供複製)。
     """
     principal.require("staff.manage")
@@ -663,14 +732,15 @@ async def invite_staff(body: InviteIn, principal: CurrentStaff, db: DbSession):
     if not _EMAIL_RE.match(email):
         return err("INVALID_EMAIL", "電子郵件格式不正確")
 
-    # 本租戶內 email 唯一(避免撞 uq_staff_tenant_email)
+    # 本租戶內 email 唯一(避免撞 uq_staff_tenant_email);不分大小寫,與登入比對一致
     dup = (
         await db.execute(
             select(Staff).where(
-                Staff.tenant_id == principal.tenant_id, Staff.email == email
+                Staff.tenant_id == principal.tenant_id,
+                func.lower(Staff.email) == _normalize_email(email),
             )
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if dup:
         return err("STAFF_EMAIL_TAKEN", f"email 已存在: {email}")
 
@@ -710,7 +780,8 @@ async def invite_staff(body: InviteIn, principal: CurrentStaff, db: DbSession):
         staff, _PURPOSE_INVITE, minutes=_INVITE_TTL_MINUTES, extra_claims={"iv": _invite_version(staff)}
     )
     invite_url = f"/accept-invite?token={token}"
-    email_sent = await _try_send_invite_email(db, staff, invite_url)
+    invite_link = _absolute_frontend_link(request, invite_url)
+    email_sent = await _try_send_invite_email(db, staff, invite_link)
     return ok(
         {
             "staff_id": str(staff.id),
@@ -718,8 +789,10 @@ async def invite_staff(body: InviteIn, principal: CurrentStaff, db: DbSession):
             "display_name": staff.display_name,
             "role": role.name,
             "email_sent": email_sent,
-            # 相對路徑;前端可自行前綴 window.location.origin 組成完整連結
+            # 相對路徑(既有欄位,保留相容);前端可自行前綴 origin 組成完整連結
             "invite_url": invite_url,
+            # 絕對網址(KEFU_FRONTEND_BASE 或對外基底),原生 App 直接複製分享
+            "invite_link": invite_link,
         }
     )
 
@@ -846,7 +919,9 @@ async def list_pending_invites(principal: CurrentStaff, db: DbSession):
 
 
 @router.post("/invite/{staff_id}/resend")
-async def resend_invite(staff_id: uuid.UUID, principal: CurrentStaff, db: DbSession):
+async def resend_invite(
+    staff_id: uuid.UUID, principal: CurrentStaff, db: DbSession, request: Request
+):
     """對尚未接受的 pending 坐席重簽邀請 token,回新 invite_url。需 staff.manage。
 
     重簽會更新 invited_at → token 版本(iv)改變 → 先前發出的舊連結因版本不符而失效
@@ -867,7 +942,8 @@ async def resend_invite(staff_id: uuid.UUID, principal: CurrentStaff, db: DbSess
         staff, _PURPOSE_INVITE, minutes=_INVITE_TTL_MINUTES, extra_claims={"iv": _invite_version(staff)}
     )
     invite_url = f"/accept-invite?token={token}"
-    email_sent = await _try_send_invite_email(db, staff, invite_url)
+    invite_link = _absolute_frontend_link(request, invite_url)
+    email_sent = await _try_send_invite_email(db, staff, invite_link)
     return ok(
         {
             "staff_id": str(staff.id),
@@ -875,6 +951,7 @@ async def resend_invite(staff_id: uuid.UUID, principal: CurrentStaff, db: DbSess
             "display_name": staff.display_name,
             "email_sent": email_sent,
             "invite_url": invite_url,
+            "invite_link": invite_link,
         }
     )
 
@@ -906,6 +983,16 @@ def _invite_link(invite_url: str) -> str:
     return f"{base}{invite_url}" if base else invite_url
 
 
+def _absolute_frontend_link(request: Request, path: str) -> str:
+    """把前端相對路徑(/accept-invite?… 或 /reset-password?…)組成絕對網址。
+
+    優先 KEFU_FRONTEND_BASE(前後端分網域時的前端基底);未設則用反代感知的對外基底
+    (app.core.urls.external_base_url,同源部署時 nginx 同時服務前端與 /api)。
+    """
+    base = (os.environ.get("KEFU_FRONTEND_BASE") or "").rstrip("/") or external_base_url(request)
+    return f"{base}{path}"
+
+
 async def _try_send_invite_email(db, staff: Staff, invite_url: str) -> bool:
     """若該租戶有啟用中的 email 渠道且設有 SMTP,寄出坐席邀請信;成功回 True。
 
@@ -928,7 +1015,8 @@ async def _try_send_invite_email(db, staff: Staff, invite_url: str) -> bool:
     try:
         from app.services.email import send_email  # 延遲匯入,避免載入 smtplib 相關成本
 
-        link = _invite_link(invite_url)
+        # 已是絕對網址(呼叫端傳 invite_link)則原樣使用;相對路徑才前綴 KEFU_FRONTEND_BASE
+        link = invite_url if invite_url.startswith(("http://", "https://")) else _invite_link(invite_url)
         subject = "您已受邀加入客服團隊"
         text = (
             "您好,\n\n"
@@ -992,9 +1080,11 @@ async def forgot_password(body: ForgotPasswordIn, db: DbSession, request: Reques
     if not await ratelimit.hit(f"forgot-ip:{ip}", limit=10, window_seconds=600):
         # 一律回通用訊息,不因限流洩漏帳號存在與否
         return ok({"message": "若該信箱存在,我們已寄出重設密碼連結,請至信箱查收。"})
-    email = body.email.strip()
+    email = _normalize_email(body.email)
     staffs = (
-        await db.execute(select(Staff).where(Staff.email == email, Staff.is_active.is_(True)))
+        await db.execute(
+            select(Staff).where(func.lower(Staff.email) == email, Staff.is_active.is_(True))
+        )
     ).scalars().all()
 
     email_sent = False
@@ -1059,7 +1149,9 @@ async def reset_password(body: ResetPasswordIn, db: DbSession):
 
 
 @router.post("/staff/{staff_id}/reset-link")
-async def staff_reset_link(staff_id: uuid.UUID, principal: CurrentStaff, db: DbSession):
+async def staff_reset_link(
+    staff_id: uuid.UUID, principal: CurrentStaff, db: DbSession, request: Request
+):
     """管理員為本租戶指定坐席產生密碼重設連結(需 staff.manage,tenant 隔離)。
 
     解決「demo / 未設 SMTP 時公開 forgot-password 走不通」:公開端點基於安全一律不外洩
@@ -1092,8 +1184,10 @@ async def staff_reset_link(staff_id: uuid.UUID, principal: CurrentStaff, db: DbS
         {
             "staff_id": str(staff.id),
             "email": staff.email,
-            # 相對路徑;前端可前綴 window.location.origin 組成完整連結
+            # 相對路徑(既有欄位,保留相容);前端可前綴 origin 組成完整連結
             "reset_url": reset_url,
+            # 絕對網址(KEFU_FRONTEND_BASE 或對外基底),原生 App 直接複製分享
+            "reset_link": _absolute_frontend_link(request, reset_url),
             "email_sent": email_sent,
         }
     )
@@ -1359,6 +1453,244 @@ async def put_security_policy(
 
 
 # =========================================================================== #
+# SSO 共用:OAuth state(防 login CSRF)+ 原生 App PKCE(一次性 code 兌換)
+#
+# Web 流程:start 產生隨機 nonce 當 OAuth state,同時種進 HttpOnly cookie
+#   (SameSite=Lax,Google 回呼為頂層 GET 導向會帶上);callback 要求 query state 與 cookie
+#   相同(常數時間比較)才放行。nonce 另盡力寫入 Redis(TTL 600 秒),Redis 故障時仍可
+#   只靠 cookie 驗證,不讓 Web SSO 因 Redis 故障而停擺。
+# 原生流程(client=native):App 以系統瀏覽器開啟 start,帶 redirect_uri(必須與
+#   KEFU_NATIVE_REDIRECT_URIS **完全相等**)、app_state、code_challenge(S256)。
+#   後端把 {redirect_uri, app_state, code_challenge} 存 Redis ``sso:state:{nonce}``(TTL 600 秒),
+#   以 nonce 當 state(SAML 為 RelayState)送往 IdP;回呼 GETDEL 取回後,**不把 JWT 放進
+#   deep link**,改發一次性 code(Redis ``sso:code:{code}``,TTL 60 秒,GETDEL 單次使用),
+#   302 到 ``{redirect_uri}?code=…&state=<app_state>``;失敗導 ``?sso_error=…&state=…``。
+#   App 再以 ``POST /sso/exchange {code, code_verifier}`` 換 token(驗 sha256(verifier))。
+#   自訂 scheme 可能被別的 App 搶註、deep link 會留在系統日誌,PKCE 使攔截者拿到 code 也換不到 token。
+# =========================================================================== #
+_SSO_STATE_TTL = 600  # OAuth state / 原生請求暫存秒數
+_SSO_CODE_TTL = 60  # 原生一次性 code 秒數
+_SSO_STATE_PREFIX = "sso:state:"
+_SSO_CODE_PREFIX = "sso:code:"
+_SSO_STATE_COOKIE = "kefu_oauth_state"
+_SSO_STATE_COOKIE_PATH = "/api/v1/auth/oauth"
+# 伺服器產生的 nonce / code:secrets.token_urlsafe(32) → 43 字元 base64url
+_SSO_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
+# RFC 7636:code_challenge 為 base64url(sha256) 無 padding(S256 恆 43 字元;放寬到 128)
+_PKCE_CHALLENGE_RE = re.compile(r"^[A-Za-z0-9_-]{43,128}$")
+# RFC 7636:code_verifier 為 43–128 個 unreserved 字元
+_PKCE_VERIFIER_RE = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
+_APP_STATE_MAX_LEN = 512
+
+
+def native_redirect_uris() -> set[str]:
+    """允許的原生回呼 redirect_uri 集合(KEFU_NATIVE_REDIRECT_URIS,逗號分隔,完全相等比對)。"""
+    return {u.strip() for u in (settings.native_redirect_uris or "").split(",") if u.strip()}
+
+
+def _pkce_s256(verifier: str) -> str:
+    """RFC 7636 S256:base64url(sha256(ascii(verifier))),去 padding。"""
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def _append_query(url: str, params: dict) -> str:
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}{urlencode(params)}"
+
+
+def native_sso_error(record: dict, code: str) -> RedirectResponse:
+    """原生 SSO 失敗:302 回 App 的 redirect_uri(已通過白名單驗證)帶 sso_error + app_state。"""
+    return RedirectResponse(
+        _append_query(record["redirect_uri"], {"sso_error": code, "state": record.get("app_state", "")}),
+        status_code=302,
+    )
+
+
+def parse_native_sso_request(
+    redirect_uri: str | None,
+    state: str | None,
+    code_challenge: str | None,
+    code_challenge_method: str | None,
+) -> tuple[dict | None, object | None]:
+    """驗證原生 SSO 起點參數。回 ``(record, None)`` 或 ``(None, 失敗回應)``。
+
+    - redirect_uri 不在白名單(完全相等)→ 回 err 信封(**不可**導向未驗證的網址)。
+    - state 缺失 / 過長 → 回 err 信封(App 無從比對回呼,不導回)。
+    - code_challenge 格式不符或 method 非 S256 → 導回 App 帶 sso_error=INVALID_REQUEST。
+    """
+    uri = (redirect_uri or "").strip()
+    if not uri or uri not in native_redirect_uris():
+        return None, err("INVALID_REDIRECT_URI", "redirect_uri 不在允許清單內")
+    app_state = state or ""
+    if not app_state or len(app_state) > _APP_STATE_MAX_LEN:
+        return None, err("INVALID_STATE", "缺少 state 參數或格式不正確")
+    record = {"client": "native", "redirect_uri": uri, "app_state": app_state}
+    if (code_challenge_method or "") != "S256" or not _PKCE_CHALLENGE_RE.match(code_challenge or ""):
+        return None, native_sso_error(record, "INVALID_REQUEST")
+    record["code_challenge"] = code_challenge
+    return record, None
+
+
+async def _sso_store(key: str, data: dict, ttl: int) -> bool:
+    """寫入 Redis 暫存(JSON);失敗回 False(不記錄 key / 值,避免 nonce、code 進日誌)。"""
+    try:
+        await realtime.get_client().set(key, json.dumps(data), ex=ttl)
+        return True
+    except Exception as exc:  # noqa: BLE001 — Redis 故障降級,由呼叫端決定如何回應
+        logger.warning("SSO 暫存寫入 Redis 失敗:%s", type(exc).__name__)
+        return False
+
+
+async def _sso_pop(key: str) -> dict | None:
+    """以 GETDEL 原子取出並刪除暫存(單次使用);查無 / 故障 / 格式錯回 None。"""
+    try:
+        raw = await realtime.get_client().getdel(key)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("SSO 暫存讀取 Redis 失敗:%s", type(exc).__name__)
+        return None
+    if not raw:
+        return None
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", "replace")
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+async def new_sso_state(record: dict) -> str | None:
+    """產生 nonce 並把 record 存 Redis(TTL 600 秒);寫入失敗回 None。"""
+    nonce = secrets.token_urlsafe(32)
+    if not await _sso_store(f"{_SSO_STATE_PREFIX}{nonce}", record, _SSO_STATE_TTL):
+        return None
+    return nonce
+
+
+async def pop_sso_state(nonce: str | None) -> dict | None:
+    """取出(並作廢)state nonce 對應的 record;格式不符直接回 None(不查 Redis)。"""
+    if not nonce or not isinstance(nonce, str) or not _SSO_TOKEN_RE.match(nonce):
+        return None
+    return await _sso_pop(f"{_SSO_STATE_PREFIX}{nonce}")
+
+
+def as_native_record(record: dict | None) -> dict | None:
+    """record 為原生流程且其 redirect_uri 仍在白名單內才回傳(回呼時再驗一次,縱深防禦)。"""
+    if not record or record.get("client") != "native":
+        return None
+    if record.get("redirect_uri") not in native_redirect_uris():
+        return None
+    return record
+
+
+async def native_sso_success(staff: Staff, record: dict) -> RedirectResponse:
+    """原生 SSO 成功:發一次性 code(60 秒)綁定 staff + code_challenge,302 回 App。"""
+    code = secrets.token_urlsafe(32)
+    stored = await _sso_store(
+        f"{_SSO_CODE_PREFIX}{code}",
+        {
+            "staff_id": str(staff.id),
+            "tenant_id": str(staff.tenant_id),
+            "code_challenge": record.get("code_challenge", ""),
+        },
+        _SSO_CODE_TTL,
+    )
+    if not stored:
+        return native_sso_error(record, "SSO_UNAVAILABLE")
+    return RedirectResponse(
+        _append_query(record["redirect_uri"], {"code": code, "state": record.get("app_state", "")}),
+        status_code=302,
+    )
+
+
+async def sso_policy_error(db, staff: Staff, ip: str) -> str | None:
+    """SSO 共用的企業安全政策把關(平台超管豁免):IP 白名單 / 強制 2FA。回失敗碼或 None。"""
+    if staff.is_platform_admin:
+        return None
+    require_2fa, ip_allowlist = await _load_security_policy(db, staff.tenant_id)
+    if not _ip_allowed(ip_allowlist, ip):
+        return "LOGIN_IP_BLOCKED"
+    if require_2fa and not staff.totp_enabled:
+        return "TWOFA_ENROLL_REQUIRED"
+    return None
+
+
+def _set_state_cookie(resp, request: Request, nonce: str) -> None:
+    """Web OAuth state 綁定瀏覽器:HttpOnly + SameSite=Lax(Google 回呼為頂層 GET 導向)。"""
+    resp.set_cookie(
+        _SSO_STATE_COOKIE,
+        nonce,
+        max_age=_SSO_STATE_TTL,
+        httponly=True,
+        secure=forwarded_scheme(request) == "https",
+        samesite="lax",
+        path=_SSO_STATE_COOKIE_PATH,
+    )
+
+
+def _clear_state_cookie(resp) -> None:
+    resp.delete_cookie(_SSO_STATE_COOKIE, path=_SSO_STATE_COOKIE_PATH)
+
+
+@router.post("/sso/exchange")
+async def sso_exchange(body: SsoExchangeIn, db: DbSession, request: Request):
+    """原生 SSO 第二步:一次性 code + PKCE code_verifier → 正式 token(與登入成功同形)。
+
+    - code 以 GETDEL 取出即作廢(單次使用;verifier 錯也一併作廢,防暴力嘗試)。
+    - 驗 base64url(sha256(code_verifier)) == code_challenge(常數時間)。
+    - 重新檢查帳號 / 租戶狀態與企業安全政策(IP 白名單、強制 2FA;平台超管豁免)。
+    - 速率限制:每 IP 5 分鐘 30 次。
+    """
+    ip = ratelimit.client_ip(request)
+    if not await ratelimit.hit(f"sso-exchange-ip:{ip}", limit=30, window_seconds=300):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too many attempts")
+
+    invalid_code = err("INVALID_CODE", "登入代碼無效或已過期,請重新登入")
+    if not _SSO_TOKEN_RE.match(body.code):
+        return invalid_code
+    record = await _sso_pop(f"{_SSO_CODE_PREFIX}{body.code}")
+    if not record:
+        return invalid_code
+    challenge = str(record.get("code_challenge") or "")
+    if (
+        not challenge
+        or not _PKCE_VERIFIER_RE.match(body.code_verifier)
+        or not hmac.compare_digest(_pkce_s256(body.code_verifier), challenge)
+    ):
+        return err("INVALID_CODE_VERIFIER", "登入驗證失敗,請重新登入")
+
+    try:
+        sid = uuid.UUID(str(record.get("staff_id")))
+        tid = uuid.UUID(str(record.get("tenant_id")))
+    except ValueError:
+        return invalid_code
+    staff = (
+        await db.execute(
+            select(Staff).where(
+                Staff.id == sid,
+                Staff.tenant_id == tid,
+                Staff.is_active.is_(True),
+                Staff.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not staff:
+        return err("SSO_NOT_INVITED", "此帳號無法登入,請聯絡管理員")
+    tenant_active = (
+        await db.execute(select(Tenant.is_active).where(Tenant.id == staff.tenant_id))
+    ).scalar_one_or_none()
+    if tenant_active is False:
+        return err("TENANT_SUSPENDED", "此工作區已停用,請聯絡管理員")
+    policy = await sso_policy_error(db, staff, ip)
+    if policy == "LOGIN_IP_BLOCKED":
+        return err("LOGIN_IP_BLOCKED", "您目前的網路位址不在允許登入的名單內,請聯絡管理員")
+    if policy == "TWOFA_ENROLL_REQUIRED":
+        return err("TWOFA_ENROLL_REQUIRED", "組織要求兩步驗證,請改用帳號密碼登入完成設定")
+    return await _issue_token(db, staff)
+
+
+# =========================================================================== #
 # 單一登入(Google OAuth 2.0 / OpenID Connect)
 #
 # 設計:僅允許「既有坐席」以 Google 登入(比對 email),不自動開帳號(安全)。
@@ -1370,6 +1702,11 @@ async def put_security_policy(
 # =========================================================================== #
 def _google_client_id() -> str | None:
     return os.environ.get("KEFU_GOOGLE_CLIENT_ID") or None
+
+
+def google_sso_configured() -> bool:
+    """Google SSO 是否可用(client_id 與 client_secret 皆已設定;供 server-info features)。"""
+    return bool(_google_client_id() and os.environ.get("KEFU_GOOGLE_CLIENT_SECRET"))
 
 
 def _google_redirect_uri(request: Request) -> str:
@@ -1387,11 +1724,44 @@ def _frontend_login_url() -> str:
 
 
 @router.get("/oauth/google/start")
-async def google_oauth_start(request: Request):
-    """導向 Google OAuth 同意畫面;未設定 client_id 時回 SSO_DISABLED(前端據此提示)。"""
+async def google_oauth_start(
+    request: Request,
+    client: str | None = None,
+    redirect_uri: str | None = None,
+    state: str | None = None,
+    code_challenge: str | None = None,
+    code_challenge_method: str | None = None,
+):
+    """導向 Google OAuth 同意畫面;未設定 client_id 時回 SSO_DISABLED(前端據此提示)。
+
+    - Web(未帶 client 或 client=web):產生 state nonce,種 HttpOnly cookie 綁定瀏覽器(防 login CSRF)。
+    - 原生(client=native):另需 redirect_uri / state / code_challenge / code_challenge_method=S256,
+      詳見上方「SSO 共用」說明;參數錯誤或停用時導回 App 帶 sso_error(redirect_uri 不合法則回 err)。
+    """
+    if client not in (None, "", "web", "native"):
+        return err("INVALID_REQUEST", "client 參數不正確")
+    native: dict | None = None
+    if client == "native":
+        native, failure = parse_native_sso_request(
+            redirect_uri, state, code_challenge, code_challenge_method
+        )
+        if native is None:
+            return failure
+
     client_id = _google_client_id()
     if not client_id:
+        if native:
+            return native_sso_error(native, "SSO_DISABLED")
         return err("SSO_DISABLED", "尚未設定 Google 單一登入,請聯絡管理員")
+
+    record = {**(native or {"client": "web"}), "provider": "google"}
+    nonce = await new_sso_state(record)
+    if nonce is None:
+        if native:
+            # 原生流程必須有伺服器端暫存才能對回 App,Redis 不可用時明確失敗
+            return native_sso_error(native, "SSO_UNAVAILABLE")
+        nonce = secrets.token_urlsafe(32)  # Web:退回只靠 cookie 驗證 state
+
     params = {
         "client_id": client_id,
         "redirect_uri": _google_redirect_uri(request),
@@ -1399,8 +1769,12 @@ async def google_oauth_start(request: Request):
         "scope": "openid email profile",
         "access_type": "online",
         "prompt": "select_account",
+        "state": nonce,
     }
-    return RedirectResponse(f"{_GOOGLE_AUTH_URL}?{urlencode(params)}", status_code=302)
+    resp = RedirectResponse(f"{_GOOGLE_AUTH_URL}?{urlencode(params)}", status_code=302)
+    if not native:
+        _set_state_cookie(resp, request, nonce)
+    return resp
 
 
 @router.get("/oauth/google/callback", name="google_oauth_callback")
@@ -1409,21 +1783,46 @@ async def google_oauth_callback(
     db: DbSession,
     code: str | None = None,
     error: str | None = None,
+    state: str | None = None,
 ):
-    """Google 回呼:以 code 換 token→取 email→比對既有 Staff;成功導回前端(帶 token)。
+    """Google 回呼:驗 state → 以 code 換 token→取 email→比對既有 Staff;成功導回前端 / App。
 
+    - state:原生流程以 Redis record 對應(GETDEL 單次使用);Web 流程須與 start 種下的
+      cookie 相同,否則 OAUTH_STATE_INVALID(防 login CSRF)。
     - 找不到對應坐席 → 導回登入頁帶 sso_error=SSO_NOT_INVITED(不自動開帳號)。
     - 任一步失敗(缺 secret / 換 token / 取 userinfo)全程 try/except 降級,導回帶 sso_error。
-    - 成功:以 URL fragment 傳 token(#sso_token=…),避免落入伺服器日誌 / Referer。
+    - Web 成功:以 URL fragment 傳 token(#sso_token=…),避免落入伺服器日誌 / Referer。
+    - 原生成功:發一次性 code 導回 App(不把 JWT 放進 deep link),App 以 /sso/exchange 兌換。
     """
     login_url = _frontend_login_url()
+    record = await pop_sso_state(state)
+    native = as_native_record(record)
+
+    def _fail(code_: str) -> RedirectResponse:
+        if native:
+            return native_sso_error(native, code_)
+        resp = RedirectResponse(f"{login_url}?{urlencode({'sso_error': code_})}", status_code=302)
+        _clear_state_cookie(resp)
+        return resp
+
+    if record is not None and (
+        record.get("provider") != "google"
+        or (record.get("client") == "native" and native is None)
+    ):
+        return _fail("OAUTH_STATE_INVALID")
+    if native is None:
+        # Web:query state 必須等於 start 時種在本瀏覽器的 cookie(常數時間比較)
+        cookie_state = request.cookies.get(_SSO_STATE_COOKIE) or ""
+        if not state or not cookie_state or not hmac.compare_digest(state, cookie_state):
+            return _fail("OAUTH_STATE_INVALID")
+
     if error or not code:
-        return RedirectResponse(f"{login_url}?{urlencode({'sso_error': 'OAUTH_FAILED'})}", status_code=302)
+        return _fail("OAUTH_FAILED")
 
     client_id = _google_client_id()
     client_secret = os.environ.get("KEFU_GOOGLE_CLIENT_SECRET")
     if not client_id or not client_secret:
-        return RedirectResponse(f"{login_url}?{urlencode({'sso_error': 'SSO_DISABLED'})}", status_code=302)
+        return _fail("SSO_DISABLED")
 
     try:
         import httpx  # 延遲匯入,對齊他處慣例
@@ -1442,19 +1841,19 @@ async def google_oauth_callback(
             access = (token_res.json() or {}).get("access_token")
             if not access:
                 logger.warning("Google OAuth 換 token 失敗 status=%s", token_res.status_code)
-                return RedirectResponse(f"{login_url}?{urlencode({'sso_error': 'OAUTH_FAILED'})}", status_code=302)
+                return _fail("OAUTH_FAILED")
             info_res = await client.get(
                 _GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access}"}
             )
             info = info_res.json() or {}
     except Exception:  # noqa: BLE001 — SSO 任一步失敗一律降級導回登入頁
         logger.exception("Google OAuth callback 失敗")
-        return RedirectResponse(f"{login_url}?{urlencode({'sso_error': 'OAUTH_FAILED'})}", status_code=302)
+        return _fail("OAUTH_FAILED")
 
     email = (info.get("email") or "").strip().lower()
     email_verified = info.get("email_verified", True)
     if not email or not email_verified:
-        return RedirectResponse(f"{login_url}?{urlencode({'sso_error': 'OAUTH_FAILED'})}", status_code=302)
+        return _fail("OAUTH_FAILED")
 
     # 比對既有 Staff(email,大小寫不敏感);email 僅租戶內唯一,跨租戶多筆時取第一個啟用者。
     staff = (
@@ -1464,27 +1863,29 @@ async def google_oauth_callback(
     ).scalars().first()
     if not staff:
         # 不自動開帳號:未被邀請的 Google 帳號一律拒絕(安全)
-        return RedirectResponse(f"{login_url}?{urlencode({'sso_error': 'SSO_NOT_INVITED'})}", status_code=302)
+        return _fail("SSO_NOT_INVITED")
 
     # 停用租戶的坐席不得登入(對齊 /login 的租戶檢查)
     tenant_active = (
         await db.execute(select(Tenant.is_active).where(Tenant.id == staff.tenant_id))
     ).scalar_one_or_none()
     if tenant_active is False:
-        return RedirectResponse(f"{login_url}?{urlencode({'sso_error': 'SSO_NOT_INVITED'})}", status_code=302)
+        return _fail("SSO_NOT_INVITED")
 
     # 企業安全政策亦適用於 SSO(平台超管豁免),避免以 SSO 繞過 IP 白名單 / 強制 2FA:
     # - IP 不在白名單 → 導回登入頁帶 LOGIN_IP_BLOCKED。
     # - 組織強制 2FA 但該坐席未啟用 → 導回帶 TWOFA_ENROLL_REQUIRED,要求改用帳密登入完成 2FA 綁定
     #   (SSO 路徑不便內嵌設定流程,故引導至帳密登入的強制設定;取捨見回報說明)。
-    require_2fa, ip_allowlist = await _load_security_policy(db, staff.tenant_id)
-    if not staff.is_platform_admin:
-        if not _ip_allowed(ip_allowlist, ratelimit.client_ip(request)):
-            return RedirectResponse(f"{login_url}?{urlencode({'sso_error': 'LOGIN_IP_BLOCKED'})}", status_code=302)
-        if require_2fa and not staff.totp_enabled:
-            return RedirectResponse(f"{login_url}?{urlencode({'sso_error': 'TWOFA_ENROLL_REQUIRED'})}", status_code=302)
+    policy = await sso_policy_error(db, staff, ratelimit.client_ip(request))
+    if policy:
+        return _fail(policy)
+
+    if native:
+        return await native_sso_success(staff, native)
 
     session = await _issue_token(db, staff)
     token = session["data"]["access_token"]
     # token 以 fragment 傳遞(不進伺服器日誌 / Referer);前端 LoginPage 讀 hash 完成登入
-    return RedirectResponse(f"{login_url}#sso_token={token}", status_code=302)
+    resp = RedirectResponse(f"{login_url}#sso_token={token}", status_code=302)
+    _clear_state_cookie(resp)
+    return resp

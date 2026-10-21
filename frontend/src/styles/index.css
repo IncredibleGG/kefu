@@ -253,3 +253,97 @@
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-in-msg { animation: kefu-fade-in 0.18s ease-out; }
+
+/* ============================================================
+   原生殼 / 行動版基礎(docs/NATIVE-CLIENTS.md;layout 審查 P0 §3(d))
+   - safe-area 變數:Capacitor 8 Android 會注入 --safe-area-inset-*(WebView 的 env() 可能回 0),
+     其餘平台取 env(safe-area-inset-*);原生層也可直接覆寫 --safe-*。
+   - 刻意不放進 @layer:讓 coarse 指標下的 16px 輸入字級能蓋過 Tailwind 的 text-sm 等工具類
+     (只影響觸控為主的裝置,桌面網頁不變)。
+   ============================================================ */
+:root {
+  --safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  /* 邏輯方向(RTL 自動鏡像),供 ps-safe / pe-safe 使用 */
+  --safe-start: var(--safe-left);
+  --safe-end: var(--safe-right);
+}
+[dir="rtl"] {
+  --safe-start: var(--safe-right);
+  --safe-end: var(--safe-left);
+}
+
+@utility pt-safe {
+  padding-top: var(--safe-top);
+}
+@utility pb-safe {
+  padding-bottom: var(--safe-bottom);
+}
+@utility ps-safe {
+  padding-inline-start: var(--safe-start);
+}
+@utility pe-safe {
+  padding-inline-end: var(--safe-end);
+}
+
+/* 隱藏捲軸但保留捲動(橫向 Tab 列、輪播等) */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* 觸控點擊不出現灰色高亮 */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 原生殼(initPlatform 於 <html> 加 .native)與觸控裝置:關閉整頁橡皮筋 / 下拉重新整理 */
+html.native,
+html.native body {
+  overscroll-behavior: none;
+}
+@media (pointer: coarse) {
+  html,
+  body {
+    overscroll-behavior: none;
+  }
+  /* iOS 聚焦字級 < 16px 的輸入框會自動放大頁面 */
+  input,
+  textarea,
+  select,
+  .tiptap {
+    font-size: 16px;
+  }
+}
+
+/* Sheet 進場動畫(components/ui/sheet.tsx) */
+@keyframes kefu-sheet-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes kefu-sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+/* --kefu-sheet-dir:LTR 為 1、RTL 為 -1,讓 start / end 抽屜方向隨閱讀方向鏡像 */
+@keyframes kefu-sheet-start {
+  from { transform: translateX(calc(-100% * var(--kefu-sheet-dir, 1))); }
+  to { transform: translateX(0); }
+}
+@keyframes kefu-sheet-end {
+  from { transform: translateX(calc(100% * var(--kefu-sheet-dir, 1))); }
+  to { transform: translateX(0); }
+}
+[dir="rtl"] {
+  --kefu-sheet-dir: -1;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-state="open"][class*="kefu-sheet"] {
+    animation: none !important;
+  }
+}

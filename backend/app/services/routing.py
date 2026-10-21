@@ -284,8 +284,14 @@ async def _do_assign(
     staff_id: uuid.UUID,
     policy: RoutingPolicy | None,
     strategy: str,
+    *,
+    actor: str | None = "auto",
 ) -> uuid.UUID:
-    """落實指派:更新會話持有人,round_robin 更新游標,發事件。"""
+    """落實指派:更新會話持有人,round_robin 更新游標,發事件。
+
+    ``actor``:誰觸發這次指派,寫進 ``session.assigned`` 事件——``"auto"`` 為規則式 /
+    AI 轉人等系統自動分配;手動指派 / 認領為操作者 staff id 字串;操作者未知時為 None。
+    """
     session.handler_staff_id = staff_id
     session.handler_type = "human"
     session.status = "open"
@@ -299,17 +305,37 @@ async def _do_assign(
         {
             "tenant_id": str(session.tenant_id),
             "session_id": str(session.id),
+            # staff_id 為既有欄位(向後相容);handler_staff_id 與其他事件(handoff)命名一致
             "staff_id": str(staff_id),
+            "handler_staff_id": str(staff_id),
             "strategy": strategy,
+            "actor": actor,
         },
     )
+    # 行動推播「指派給我」:已 commit 之後才排程;自己認領(actor 即被指派者)不推。
+    # 未設定 FCM 時 push 內部直接 return;任何失敗都不影響分配主流程。
+    try:
+        from app.services import push
+
+        push.on_assigned(session.tenant_id, session.id, staff_id, actor)
+    except Exception:  # noqa: BLE001
+        logger.warning("push.on_assigned 失敗(session=%s)", session.id, exc_info=True)
     return staff_id
 
 
 async def manual_assign(
-    db: AsyncSession, tenant_id: uuid.UUID, session_id: uuid.UUID, staff_id: uuid.UUID
+    db: AsyncSession,
+    tenant_id: uuid.UUID,
+    session_id: uuid.UUID,
+    staff_id: uuid.UUID,
+    *,
+    actor_staff_id: uuid.UUID | None = None,
 ) -> uuid.UUID | None:
-    """手動把會話指派給指定坐席(需同租戶且 active)。成功回傳 staff_id,否則 None。"""
+    """手動把會話指派給指定坐席(需同租戶且 active)。成功回傳 staff_id,否則 None。
+
+    ``actor_staff_id``:操作者(主管指派時為主管、搶單認領時為本人),寫進
+    ``session.assigned`` 事件的 ``actor``;未提供時 actor 為 None(操作者未知)。
+    """
     session = (
         await db.execute(
             select(Session).where(
@@ -334,7 +360,8 @@ async def manual_assign(
     if staff is None:
         return None
     # 手動指派不受策略/上限限制(主管可強制指派)
-    return await _do_assign(db, session, staff_id, None, "manual")
+    actor = str(actor_staff_id) if actor_staff_id is not None else None
+    return await _do_assign(db, session, staff_id, None, "manual", actor=actor)
 
 
 async def list_queue(

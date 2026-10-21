@@ -36,7 +36,7 @@ export function playPing() {
 
 /* --------------------------- 桌面通知 --------------------------- */
 
-/** 是否支援瀏覽器 Notification。 */
+/** 是否支援瀏覽器 Notification(web 專用;跨平台判斷請用 lib/platform.notificationSupported)。 */
 export function notificationSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;
 }
@@ -61,7 +61,8 @@ export async function requestNotificationPermission(): Promise<NotificationPermi
   }
 }
 
-/** 顯示一則桌面通知(已授權時)。點擊聚焦視窗並可選導頁。 */
+/** 顯示一則桌面通知(已授權時)。點擊聚焦視窗並可選導頁。
+ *  @deprecated 通知請一律經 stores/notify.notifyEvent → lib/platform.notify(支援原生殼);此函式僅保留相容。 */
 export function showDesktopNotification(
   title: string,
   body: string,

@@ -93,7 +93,10 @@
     "online": "Online",
     "busy": "Busy",
     "away": "Away",
-    "offline": "Offline"
+    "offline": "Offline",
+    "syncNoStaff": "Couldn't identify your agent profile; status not synced",
+    "syncFailed": "Couldn't change status, please try again",
+    "syncErrorShort": "Status not synced"
   },
   "login": {
     "title": "Sign in to Agent Workspace",
@@ -216,7 +219,8 @@
       "read": "Read",
       "delivered": "Delivered",
       "translatedTag": "Translated",
-      "imageAlt": "Image"
+      "imageAlt": "Image",
+      "copy": "Copy"
     },
     "composer": {
       "cannedHint": "Canned replies · type / then a shortcut",
@@ -246,7 +250,15 @@
       "notePlaceholder": "Service summary, follow-up tasks…",
       "csatLabel": "Satisfaction",
       "starLabel": "{{n}} stars",
-      "submit": "Close and save"
+      "submit": "Close and save",
+      "closeFailed": "Couldn't close the conversation, please try again",
+      "saveFailed": "Couldn't save the service summary, please try again",
+      "descriptionNoteOnly": "Only records the service summary; the conversation won't be closed.",
+      "internalRatingLabel": "Internal handling rating (optional)",
+      "clearRating": "Clear",
+      "internalRatingHint": "For internal quality reference only, separate from visitor satisfaction (CSAT). Nothing is submitted if left unrated, and it never overrides or counts toward the visitor's rating.",
+      "submitting": "Processing…",
+      "saveOnly": "Save service summary"
     },
     "sessionTags": {
       "label": "Session tags",
@@ -313,7 +325,15 @@
         "postbackPlaceholder": "Payload sent on click (triggers a bot flow)",
         "postbackPreview": "Postback (triggers a bot flow / automation when the visitor clicks)"
       }
-    }
+    },
+    "createTicket": "Escalate to ticket",
+    "transferFailed": "Transfer failed, please try again",
+    "ticketFromSessionTitle": "Conversation ticket: {{name}}",
+    "ticketCreated": "Ticket created",
+    "ticketCreateFailed": "Couldn't create the ticket, please try again",
+    "viewTickets": "View tickets",
+    "sendFailed": "Couldn't send the message, please try again",
+    "noteSaveFailed": "Couldn't save the internal note, please try again"
   },
   "panel": {
     "info": "Visitor",
@@ -343,7 +363,8 @@
     "enabled": "Enabled",
     "search": "Search",
     "language": "Language",
-    "exportCsv": "Export CSV"
+    "exportCsv": "Export CSV",
+    "copy": "Copy"
   },
   "layout": {
     "searchNoResults": "No matching results",
@@ -361,7 +382,8 @@
     "desktopNotification": "Desktop notifications",
     "desktopNotificationToggle": "Toggle desktop notifications",
     "unreadSummary": "{{total}} unread across {{sessions}} sessions",
-    "noUnread": "No unread messages"
+    "noUnread": "No unread messages",
+    "primaryNav": "Main navigation"
   },
   "core": {
     "loginApiMode": "API: {{api}} · Mode: {{mode}}",
@@ -1321,7 +1343,8 @@
     },
     "emptyValue": "—",
     "deleteConfirm": "Delete this custom field? Values already entered will no longer be shown but remain in existing ticket data.",
-    "selectPlaceholder": "Please select"
+    "selectPlaceholder": "Please select",
+    "requiredMissing": "Please fill in the required fields first"
   },
   "routing": {
     "queue": {
@@ -1634,7 +1657,8 @@
     "removeParticipant": "Remove",
     "threadPlaceholder": "Reply to the discussion, use @ to mention colleagues…",
     "untitled": "Untitled discussion",
-    "searchStaff": "Search agents to add…"
+    "searchStaff": "Search agents to add…",
+    "mentionNoteFailed": "Couldn't send the @mention note, please try again"
   },
   "reports": {
     "colLevel": "Level",
@@ -1870,7 +1894,8 @@
     "cancel": "Cancel",
     "tags": "Tags",
     "close": "Close",
-    "actions": "Action sequence"
+    "actions": "Action sequence",
+    "actionIncomplete": "Some actions have required fields that aren't filled in"
   },
   "knowledge": {
     "manage": {
@@ -2410,7 +2435,8 @@
     "statusQueued": "Queued",
     "statusClosed": "Closed",
     "closedBadge": "Closed",
-    "reopen": "Reopen"
+    "reopen": "Reopen",
+    "visitorTypingPreview": "Visitor is typing: "
   },
   "pagetrail": {
     "error": "Failed to load browsing trail",
@@ -2899,5 +2925,160 @@
       "weekly": "Weekly",
       "monthly": "Monthly"
     }
+  },
+  "native": {
+    "notify": {
+      "channelName": "Message notifications",
+      "channelDesc": "Alerts for new messages, assignments, and transfers",
+      "visitor": "Visitor"
+    },
+    "server": {
+      "title": "Connect to server",
+      "subtitle": "Enter your company's kefu server URL",
+      "urlLabel": "Server URL",
+      "connect": "Connect",
+      "connecting": "Connecting…",
+      "cancel": "Cancel",
+      "errorEmpty": "Please enter the server URL",
+      "errorInvalid": "Invalid URL format",
+      "errorHttps": "The app can only connect to https:// servers",
+      "errorNotKefu": "This URL is not a kefu server",
+      "errorOutdated": "This server requires a newer version of the app. Please update first",
+      "errorUnreachable": "Can't connect to the server. Check the URL and your network",
+      "switchTitle": "Switch server?",
+      "switchDesc": "A link is asking to connect to {{server}}. You'll need to sign in again after switching.",
+      "switchConfirm": "Go to setup",
+      "intro": "Enter your company's kefu server URL. If you're not sure what it is, ask your system administrator.",
+      "urlHint": "Just enter the domain, e.g. kf.example.com (https is used automatically).",
+      "fromLinkHint": "This URL came from a setup link. Please verify it before continuing.",
+      "test": "Test connection",
+      "continue": "Continue",
+      "back": "Go back without changing",
+      "appVersion": "App version {{version}}",
+      "saveFailed": "Couldn't save the server settings, please try again",
+      "linkTitle": "Server setup link received",
+      "linkDesc": "The link is asking to use the server below. Only apply it if you trust this URL.",
+      "linkApply": "Use this URL",
+      "linkIgnore": "Ignore",
+      "okTitle": "Connected successfully",
+      "okHost": "Server",
+      "okVersion": "Version",
+      "okFeatures": "Features",
+      "okLegacy": "The server is available but didn't provide version information (it may be an older version).",
+      "featurePassword": "Password sign-in",
+      "featureGoogle": "Google sign-in",
+      "featureSaml": "SAML single sign-on",
+      "featurePush": "Push notifications",
+      "errorEmptyDesc": "Please enter your company's kefu server URL.",
+      "errorInvalidDesc": "Enter a URL like https://kf.example.com.",
+      "errorHttpsTitle": "HTTPS connection required",
+      "errorNotKefuDesc": "This URL responded, but it isn't a kefu service. Check that the URL is correct, or ask your system administrator.",
+      "errorOfflineTitle": "Your device is offline",
+      "errorOfflineDesc": "Check your Wi-Fi or mobile data connection and try again.",
+      "errorTimeoutTitle": "Connection timed out",
+      "errorTimeoutDesc": "The server didn't respond in time. The network may be unstable or the server may be busy. Please try again later.",
+      "errorDnsTitle": "Server not found",
+      "errorDnsDesc": "Couldn't resolve or reach this URL. Check the spelling and your network connection, and make sure the server's HTTPS certificate is valid."
+    },
+    "login": {
+      "serverLabel": "Server",
+      "serverUnknown": "Not set",
+      "changeServer": "Change server",
+      "changeServerTitle": "Change server?",
+      "changeServerDesc": "You'll return to the server setup screen. After connecting to a different server, you'll need to sign in again with an account on that server.",
+      "changeServerConfirm": "Change",
+      "invalidWithTenant": "Incorrect email, password, or workspace ID",
+      "openAuthenticator": "Open in authenticator app",
+      "samlLogin": "Sign in to {{slug}} with SAML SSO",
+      "tenantTitle": "Choose a workspace",
+      "tenantHint": "This account belongs to multiple workspaces. Choose the one you want to sign in to.",
+      "tenantRequired": "This account belongs to multiple workspaces. Enter the workspace ID under \"Workspace (advanced)\"",
+      "workspaceToggle": "Workspace (advanced)",
+      "workspaceLabel": "Workspace ID",
+      "workspacePlaceholder": "e.g. acme",
+      "workspaceHint": "Fill this in if your account belongs to multiple workspaces; otherwise, leave it blank.",
+      "workspaceHintSaml": "Fill this in if your account belongs to multiple workspaces or you want to use SAML single sign-on; otherwise, leave it blank.",
+      "sso": {
+        "waiting": "The sign-in page has opened in your browser. You'll be brought back to the app automatically when you're done.",
+        "completing": "Completing sign-in…",
+        "errOpenBrowser": "Couldn't open the system browser, please try again",
+        "errSamlDisabled": "SAML single sign-on isn't enabled for this workspace. Please contact your administrator",
+        "errNotInvited": "This account hasn't been invited to the workspace. Please contact your administrator",
+        "errUnavailable": "Single sign-on is temporarily unavailable. Please try again later",
+        "errInvalidRequest": "Invalid sign-in request. Please update the app and try again",
+        "errExpired": "Your sign-in session has expired. Please sign in again",
+        "errVerify": "Sign-in verification failed. Please sign in again",
+        "errIpBlocked": "Your current network address isn't on the sign-in allowlist. Please contact your administrator",
+        "err2faEnroll": "Your organization requires two-factor authentication. Please sign in with your email and password to complete setup",
+        "errSuspended": "This workspace has been suspended. Please contact your administrator",
+        "errRateLimited": "Too many attempts, please try again later",
+        "errNetwork": "Can't connect to the server. Check your network and try again",
+        "errSamlFailed": "SAML single sign-on failed, please try again"
+      }
+    },
+    "update": {
+      "title": "Please update the app",
+      "desc": "This server recommends version {{min}} or later (you're on {{current}}). Some features may not work properly.",
+      "dismiss": "Not now"
+    }
+  },
+  "mobile": {
+    "composer": {
+      "placeholder": "Type a message… (/ for canned replies)",
+      "more": "More tools",
+      "closePanel": "Close panel",
+      "enhanceNeedsText": "Enter some text first",
+      "cannedEmpty": "No canned replies available",
+      "loading": "Loading…"
+    },
+    "message": {
+      "actions": "Message actions"
+    },
+    "tabBar": "Main tabs",
+    "tab": {
+      "visitors": "Visitors",
+      "more": "More",
+      "unreadLabel": "{{label}}, {{count}} unread"
+    },
+    "openMenu": "Open menu",
+    "secondaryNav": "Submenu",
+    "secondaryPickerDesc": "Choose where to go",
+    "group": {
+      "account": "Account",
+      "team": "Team",
+      "conversation": "Conversations",
+      "ai": "AI",
+      "channels": "Channels",
+      "advanced": "Advanced"
+    },
+    "search": {
+      "hint": "Enter keywords to search conversations, messages, and contacts"
+    },
+    "drawer": {
+      "desc": "Navigation, agent status, and account settings",
+      "darkMode": "Dark mode",
+      "version": "Version {{version}}",
+      "toggleSub": "Expand {{label}} submenu"
+    },
+    "context": {
+      "title": "Visitor info & tools"
+    },
+    "conv": {
+      "back": "Back to conversations",
+      "moreActions": "More actions",
+      "backToActions": "Back",
+      "snoozedNotice": "Snoozed for {{duration}}",
+      "unsnoozedNotice": "Snooze canceled",
+      "snoozeFailed": "Snooze failed, please try again"
+    },
+    "workspace": {
+      "backToList": "Back to conversations"
+    }
+  },
+  "conn": {
+    "connected": "Connected",
+    "connecting": "Connecting…",
+    "reconnecting": "Reconnecting…",
+    "mock": "Mock live"
   }
 }

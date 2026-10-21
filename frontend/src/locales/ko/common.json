@@ -15,7 +15,8 @@
     "desktopNotification": "데스크톱 알림",
     "desktopNotificationToggle": "데스크톱 알림 켜기/끄기",
     "unreadSummary": "현재 읽지 않은 메시지 {{total}}건이 {{sessions}}개 대화에 있습니다",
-    "noUnread": "읽지 않은 메시지가 없습니다"
+    "noUnread": "읽지 않은 메시지가 없습니다",
+    "primaryNav": "기본 탐색"
   },
   "workspace": {
     "loading": "불러오는 중…",
@@ -85,7 +86,8 @@
       "read": "읽음",
       "delivered": "전달됨",
       "translatedTag": "번역",
-      "imageAlt": "이미지"
+      "imageAlt": "이미지",
+      "copy": "복사"
     },
     "composer": {
       "cannedHint": "빠른 답변 · / 입력 후 단축코드",
@@ -115,7 +117,15 @@
       "notePlaceholder": "이번 상담 요약, 후속 할 일…",
       "csatLabel": "만족도",
       "starLabel": "{{n}}점",
-      "submit": "종료 및 저장"
+      "submit": "종료 및 저장",
+      "closeFailed": "대화를 종료하지 못했습니다. 다시 시도하세요",
+      "saveFailed": "상담 요약을 저장하지 못했습니다. 다시 시도하세요",
+      "descriptionNoteOnly": "이번 상담 요약만 기록하며 대화는 종료되지 않습니다.",
+      "internalRatingLabel": "내부 처리 등급 (선택)",
+      "clearRating": "지우기",
+      "internalRatingHint": "내부 품질 참고용이며 방문자 만족도(CSAT)와는 별개입니다. 평가하지 않으면 전송되지 않으며, 방문자 평가를 덮어쓰거나 집계에 포함하지 않습니다.",
+      "submitting": "처리 중…",
+      "saveOnly": "상담 요약 저장"
     },
     "sessionTags": {
       "label": "대화 태그",
@@ -209,7 +219,15 @@
         "postbackPlaceholder": "클릭 시 전송할 payload(bot 플로우 트리거)",
         "postbackPreview": "Postback(방문자가 클릭하면 bot 플로우 / 자동화 트리거)"
       }
-    }
+    },
+    "createTicket": "티켓으로 전환",
+    "transferFailed": "이관에 실패했습니다. 다시 시도하세요",
+    "ticketFromSessionTitle": "대화 티켓: {{name}}",
+    "ticketCreated": "티켓이 생성되었습니다",
+    "ticketCreateFailed": "티켓을 생성하지 못했습니다. 다시 시도하세요",
+    "viewTickets": "티켓 보기",
+    "sendFailed": "메시지를 보내지 못했습니다. 다시 시도하세요",
+    "noteSaveFailed": "내부 메모를 저장하지 못했습니다. 다시 시도하세요"
   },
   "core": {
     "loginApiMode": "API: {{api}} · 모드: {{mode}}",
@@ -1026,7 +1044,8 @@
     "save": "저장",
     "search": "검색",
     "language": "언어",
-    "exportCsv": "CSV 내보내기"
+    "exportCsv": "CSV 내보내기",
+    "copy": "복사"
   },
   "login": {
     "demoHint": "백엔드가 실행되지 않은 경우 아무 계정/비밀번호로 mock 모드로 진입할 수 있습니다",
@@ -1152,7 +1171,10 @@
     "away": "자리 비움",
     "busy": "바쁨",
     "offline": "오프라인",
-    "online": "온라인"
+    "online": "온라인",
+    "syncNoStaff": "상담원 정보를 가져올 수 없어 상태가 동기화되지 않았습니다",
+    "syncFailed": "상태 전환에 실패했습니다. 다시 시도하세요",
+    "syncErrorShort": "상태 미동기화"
   },
   "topbar": {
     "account": "계정",
@@ -1321,7 +1343,8 @@
     },
     "emptyValue": "—",
     "deleteConfirm": "이 사용자 지정 필드를 삭제하시겠습니까? 입력된 값은 더 이상 표시되지 않지만 기존 티켓 데이터에는 유지됩니다.",
-    "selectPlaceholder": "선택하세요"
+    "selectPlaceholder": "선택하세요",
+    "requiredMissing": "먼저 필수 필드를 입력하세요"
   },
   "routing": {
     "queue": {
@@ -1634,7 +1657,8 @@
     "removeParticipant": "제거",
     "threadPlaceholder": "논의에 답하고 @로 동료를 멘션하세요…",
     "untitled": "제목 없는 논의",
-    "searchStaff": "상담원을 검색해 추가…"
+    "searchStaff": "상담원을 검색해 추가…",
+    "mentionNoteFailed": "@멘션 메모를 보내지 못했습니다. 다시 시도하세요"
   },
   "reports": {
     "colLevel": "등급",
@@ -1870,7 +1894,8 @@
     "cancel": "취소",
     "tags": "태그",
     "close": "닫기",
-    "actions": "동작 순서"
+    "actions": "동작 순서",
+    "actionIncomplete": "필수 필드가 입력되지 않은 동작이 있습니다"
   },
   "knowledge": {
     "manage": {
@@ -2410,7 +2435,8 @@
     "statusQueued": "대기 중",
     "statusClosed": "종료됨",
     "closedBadge": "종료됨",
-    "reopen": "다시 열기"
+    "reopen": "다시 열기",
+    "visitorTypingPreview": "방문자 입력 중: "
   },
   "pagetrail": {
     "error": "브라우징 기록을 불러오지 못했습니다",
@@ -2899,5 +2925,160 @@
       "weekly": "매주",
       "monthly": "매월"
     }
+  },
+  "native": {
+    "notify": {
+      "channelName": "메시지 알림",
+      "channelDesc": "새 메시지, 배정 및 이관 알림",
+      "visitor": "방문자"
+    },
+    "server": {
+      "title": "서버에 연결",
+      "subtitle": "회사의 kefu 서버 주소를 입력하세요",
+      "urlLabel": "서버 주소",
+      "connect": "연결",
+      "connecting": "연결 중…",
+      "cancel": "취소",
+      "errorEmpty": "서버 주소를 입력하세요",
+      "errorInvalid": "주소 형식이 올바르지 않습니다",
+      "errorHttps": "앱은 https:// 서버에만 연결할 수 있습니다",
+      "errorNotKefu": "이 주소는 kefu 서버가 아닙니다",
+      "errorOutdated": "이 서버를 사용하려면 최신 버전의 앱이 필요합니다. 먼저 업데이트하세요",
+      "errorUnreachable": "서버에 연결할 수 없습니다. 주소와 네트워크를 확인하세요",
+      "switchTitle": "서버를 전환할까요?",
+      "switchDesc": "링크에서 {{server}}에 연결하도록 요청했습니다. 전환하면 다시 로그인해야 합니다.",
+      "switchConfirm": "설정으로 이동",
+      "intro": "회사의 kefu 서버 주소를 입력하세요. 주소를 모르는 경우 시스템 관리자에게 문의하세요.",
+      "urlHint": "도메인만 입력하면 됩니다(예: kf.example.com). https가 자동으로 사용됩니다.",
+      "fromLinkHint": "이 주소는 설정 링크에서 가져왔습니다. 확인한 후 계속하세요.",
+      "test": "연결 테스트",
+      "continue": "계속",
+      "back": "변경하지 않고 돌아가기",
+      "appVersion": "앱 버전 {{version}}",
+      "saveFailed": "서버 설정을 저장할 수 없습니다. 다시 시도하세요",
+      "linkTitle": "서버 설정 링크를 받았습니다",
+      "linkDesc": "링크에서 아래 서버를 사용하도록 요청했습니다. 신뢰할 수 있는 주소인지 확인한 후 적용하세요.",
+      "linkApply": "이 주소 사용",
+      "linkIgnore": "무시",
+      "okTitle": "연결 성공",
+      "okHost": "서버",
+      "okVersion": "버전",
+      "okFeatures": "기능",
+      "okLegacy": "서버를 사용할 수 있지만 버전 정보를 제공하지 않습니다(이전 버전일 수 있습니다).",
+      "featurePassword": "계정/비밀번호 로그인",
+      "featureGoogle": "Google 로그인",
+      "featureSaml": "SAML 싱글 사인온",
+      "featurePush": "푸시 알림",
+      "errorEmptyDesc": "회사의 kefu 서버 주소를 입력하세요.",
+      "errorInvalidDesc": "https://kf.example.com 같은 형식의 주소를 입력하세요.",
+      "errorHttpsTitle": "https 연결이 필요합니다",
+      "errorNotKefuDesc": "이 주소에서 응답이 있었지만 kefu 서비스가 아닙니다. 주소가 올바른지 확인하거나 시스템 관리자에게 문의하세요.",
+      "errorOfflineTitle": "기기가 오프라인 상태입니다",
+      "errorOfflineDesc": "Wi-Fi 또는 모바일 네트워크를 확인한 후 다시 시도하세요.",
+      "errorTimeoutTitle": "연결 시간 초과",
+      "errorTimeoutDesc": "서버가 제한 시간 내에 응답하지 않았습니다. 네트워크가 불안정하거나 서버가 혼잡할 수 있습니다. 잠시 후 다시 시도하세요.",
+      "errorDnsTitle": "서버를 찾을 수 없습니다",
+      "errorDnsDesc": "이 주소를 확인하거나 연결할 수 없습니다. 철자와 네트워크 연결을 확인하고, 서버의 HTTPS 인증서가 유효한지 확인하세요."
+    },
+    "login": {
+      "serverLabel": "서버",
+      "serverUnknown": "설정되지 않음",
+      "changeServer": "서버 변경",
+      "changeServerTitle": "서버를 변경할까요?",
+      "changeServerDesc": "서버 설정 화면으로 돌아갑니다. 다른 서버에 연결한 후에는 해당 서버의 계정으로 다시 로그인해야 합니다.",
+      "changeServerConfirm": "변경",
+      "invalidWithTenant": "이메일, 비밀번호 또는 워크스페이스 ID가 올바르지 않습니다",
+      "openAuthenticator": "인증 앱에서 열기",
+      "samlLogin": "SAML 싱글 사인온으로 {{slug}}에 로그인",
+      "tenantTitle": "워크스페이스 선택",
+      "tenantHint": "이 계정은 여러 워크스페이스에 속해 있습니다. 로그인할 워크스페이스를 선택하세요.",
+      "tenantRequired": "이 계정은 여러 워크스페이스에 속해 있습니다. '워크스페이스(고급)'에 워크스페이스 ID를 입력하세요",
+      "workspaceToggle": "워크스페이스(고급)",
+      "workspaceLabel": "워크스페이스 ID",
+      "workspacePlaceholder": "예: acme",
+      "workspaceHint": "같은 계정이 여러 워크스페이스에 속한 경우 입력하세요. 그 외에는 비워 두어도 됩니다.",
+      "workspaceHintSaml": "같은 계정이 여러 워크스페이스에 속해 있거나 SAML 싱글 사인온을 사용하려는 경우 입력하세요. 그 외에는 비워 두어도 됩니다.",
+      "sso": {
+        "waiting": "브라우저에서 로그인 페이지를 열었습니다. 완료되면 자동으로 앱으로 돌아갑니다.",
+        "completing": "로그인을 완료하는 중…",
+        "errOpenBrowser": "시스템 브라우저를 열 수 없습니다. 다시 시도하세요",
+        "errSamlDisabled": "이 워크스페이스에서 SAML 싱글 사인온이 활성화되지 않았습니다. 관리자에게 문의하세요",
+        "errNotInvited": "이 계정은 워크스페이스에 초대되지 않았습니다. 관리자에게 문의하세요",
+        "errUnavailable": "싱글 사인온 서비스를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도하세요",
+        "errInvalidRequest": "로그인 요청이 올바르지 않습니다. 앱을 업데이트한 후 다시 시도하세요",
+        "errExpired": "로그인 세션이 만료되었습니다. 다시 로그인하세요",
+        "errVerify": "로그인 인증에 실패했습니다. 다시 로그인하세요",
+        "errIpBlocked": "현재 네트워크 주소가 로그인 허용 목록에 없습니다. 관리자에게 문의하세요",
+        "err2faEnroll": "조직에서 2단계 인증을 요구합니다. 계정과 비밀번호로 로그인하여 설정을 완료하세요",
+        "errSuspended": "이 워크스페이스는 사용 중지되었습니다. 관리자에게 문의하세요",
+        "errRateLimited": "시도 횟수가 너무 많습니다. 잠시 후 다시 시도하세요",
+        "errNetwork": "서버에 연결할 수 없습니다. 네트워크를 확인한 후 다시 시도하세요",
+        "errSamlFailed": "SAML 싱글 사인온에 실패했습니다. 다시 시도하세요"
+      }
+    },
+    "update": {
+      "title": "앱을 업데이트하세요",
+      "desc": "이 서버는 {{min}} 이상 버전을 권장합니다(현재 {{current}}). 일부 기능이 정상적으로 작동하지 않을 수 있습니다.",
+      "dismiss": "나중에"
+    }
+  },
+  "mobile": {
+    "composer": {
+      "placeholder": "메시지 입력…(/ 빠른 답변)",
+      "more": "도구 더 보기",
+      "closePanel": "패널 닫기",
+      "enhanceNeedsText": "먼저 내용을 입력하세요",
+      "cannedEmpty": "사용 가능한 빠른 답변이 없습니다",
+      "loading": "불러오는 중…"
+    },
+    "message": {
+      "actions": "메시지 작업"
+    },
+    "tabBar": "주요 탭",
+    "tab": {
+      "visitors": "방문자",
+      "more": "더 보기",
+      "unreadLabel": "{{label}}, 읽지 않음 {{count}}개"
+    },
+    "openMenu": "메뉴 열기",
+    "secondaryNav": "하위 메뉴",
+    "secondaryPickerDesc": "이동할 항목을 선택하세요",
+    "group": {
+      "account": "계정",
+      "team": "팀",
+      "conversation": "대화",
+      "ai": "AI",
+      "channels": "채널",
+      "advanced": "고급"
+    },
+    "search": {
+      "hint": "키워드를 입력하여 대화, 메시지, 연락처를 검색하세요"
+    },
+    "drawer": {
+      "desc": "탐색, 상담원 상태 및 계정 설정",
+      "darkMode": "다크 모드",
+      "version": "버전 {{version}}",
+      "toggleSub": "{{label}} 하위 메뉴 펼치기"
+    },
+    "context": {
+      "title": "방문자 정보 및 도구"
+    },
+    "conv": {
+      "back": "대화 목록으로 돌아가기",
+      "moreActions": "작업 더 보기",
+      "backToActions": "뒤로",
+      "snoozedNotice": "{{duration}} 동안 미뤘습니다",
+      "unsnoozedNotice": "미루기를 취소했습니다",
+      "snoozeFailed": "미루기에 실패했습니다. 다시 시도하세요"
+    },
+    "workspace": {
+      "backToList": "대화 목록으로 돌아가기"
+    }
+  },
+  "conn": {
+    "connected": "연결됨",
+    "connecting": "연결 중…",
+    "reconnecting": "다시 연결하는 중…",
+    "mock": "모의 실시간"
   }
 }

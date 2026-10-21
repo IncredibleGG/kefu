@@ -1,8 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useLocation, Navigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
-  MessagesSquare,
   Loader2,
   AlertCircle,
   Sun,
@@ -13,6 +12,9 @@ import {
   KeyRound,
   Copy,
   Check,
+  ChevronRight,
+  Building2,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,8 +23,31 @@ import { useAuth } from "@/stores/auth";
 import { useUi } from "@/stores/ui";
 import { useBrand } from "@/stores/brand";
 import { config } from "@/lib/config";
+import { cn } from "@/lib/utils";
+import { isMobileApp, isNative, onDeepLink, onResume } from "@/lib/platform";
 import { ApiError, isNetworkError } from "@/api/client";
-import { loginRequest, finalizeSession, enrollVerify2fa } from "@/api/authExtra";
+import { finalizeSession, enrollVerify2fa } from "@/api/authExtra";
+import { AuthShell } from "@/components/auth/AuthShell";
+import { BrandMark } from "@/components/auth/BrandMark";
+import { GoogleIcon } from "@/components/auth/GoogleIcon";
+import { ServerHostBar } from "@/components/auth/ServerHostBar";
+import { TenantPicker } from "@/components/auth/TenantPicker";
+import { AppUpdateBanner } from "@/components/auth/AppUpdateBanner";
+import { useServerInfo } from "@/components/auth/serverInfo";
+import { openOtpauth, parseAuthCallback, type AuthCallback } from "@/components/auth/links";
+import {
+  loginWithTenant,
+  normalizeTenantSlug,
+  tenantChoicesOf,
+  type TenantChoice,
+} from "@/components/auth/loginApi";
+import {
+  beginNativeSso,
+  clearPendingSso,
+  nativeSsoErrorText,
+  resolveNativeSsoCallback,
+  type SsoProvider,
+} from "@/components/auth/nativeSso";
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -39,6 +64,11 @@ export function LoginPage() {
   const demoPrefill = config.mockMode !== "off";
   const [email, setEmail] = useState(demoPrefill ? "admin@demo.local" : "");
   const [password, setPassword] = useState(demoPrefill ? "admin12345" : "");
+  // 多租戶:選填工作區 slug(進階,預設收合);同一帳密對到多個工作區時後端回清單讓使用者選
+  const [tenant, setTenant] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [tenantChoices, setTenantChoices] = useState<TenantChoice[] | null>(null);
+  const [pickingSlug, setPickingSlug] = useState<string | null>(null);
   // 2FA:密碼通過後若需 OTP,顯示驗證碼輸入;challenge 免重送密碼
   const [otp, setOtp] = useState("");
   const [need2fa, setNeed2fa] = useState(false);
@@ -65,12 +95,19 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   // SSO(Google):按鈕忙碌狀態 + 導回時處理 hash 的 token / query 的錯誤碼
   const [ssoBusy, setSsoBusy] = useState(false);
+  // 原生 SSO:正在等系統瀏覽器完成哪一種登入;ssoCompleting = 已收到回呼、正在兌換 token
+  const [nativeSso, setNativeSso] = useState<SsoProvider | null>(null);
+  const [ssoCompleting, setSsoCompleting] = useState(false);
+  // 原生殼:伺服器資訊(決定 SSO 按鈕、提示更新);web 不請求
+  const serverInfo = useServerInfo(isNative);
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || "/workspace";
+  const tenantSlug = normalizeTenantSlug(tenant);
 
   // Google 回呼導回登入頁:成功以 fragment 帶 token(#sso_token=…),失敗以 query 帶 sso_error。
-  // 於掛載時處理一次;token 讀畢立即清掉 hash,避免殘留在網址列 / 歷史紀錄。
+  // 於掛載時處理一次;token 讀畢立即清掉 hash,避免殘留在網址列 / 歷史紀錄。(web 流程,原生走 deep link)
   useEffect(() => {
+    if (isNative) return;
     const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
     const ssoToken = new URLSearchParams(hash).get("sso_token");
     if (ssoToken) {
@@ -100,15 +137,84 @@ export function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 原生 SSO 回呼:kefu://auth/callback?code&state(或 sso_error)。
+  // 以 ref 取最新的處理函式,訂閱只建立一次(平台層會把冷啟動前抵達的連結重播給訂閱者)。
+  async function handleNativeCallback(url: string, cb: AuthCallback) {
+    const out = await resolveNativeSsoCallback(url, cb);
+    if (out.kind === "ignored") return;
+    setNativeSso(null);
+    if (out.kind === "error") {
+      setError(nativeSsoErrorText(t, out.code, out.provider));
+      return;
+    }
+    setError(null);
+    setSsoCompleting(true);
+    try {
+      await finalizeSession(out.result);
+      navigate(from, { replace: true });
+    } catch {
+      setError(nativeSsoErrorText(t, "OAUTH_FAILED", out.provider));
+    } finally {
+      setSsoCompleting(false);
+    }
+  }
+  const callbackRef = useRef(handleNativeCallback);
+  callbackRef.current = handleNativeCallback;
+
+  useEffect(() => {
+    if (!isNative) return;
+    return onDeepLink((url) => {
+      const cb = parseAuthCallback(url);
+      if (cb) void callbackRef.current(url, cb);
+    });
+  }, []);
+
+  // 使用者從瀏覽器返回卻沒有完成登入(關掉瀏覽器):回到前景幾秒後仍無回呼 → 解除等待狀態。
+  // 暫存的 PKCE 狀態保留到逾時,稍晚抵達的回呼仍可完成登入。
+  useEffect(() => {
+    if (!nativeSso) return;
+    let timer: number | undefined;
+    const off = onResume(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setNativeSso(null), 4000);
+    });
+    return () => {
+      off();
+      window.clearTimeout(timer);
+    };
+  }, [nativeSso]);
+
   if (token) return <Navigate to={from} replace />;
+
+  /** 原生:以系統瀏覽器開始 Google / SAML 單一登入(PKCE,docs/NATIVE-CLIENTS.md §4.1)。 */
+  async function startNativeSso(provider: SsoProvider) {
+    setError(null);
+    setNativeSso(provider);
+    try {
+      await beginNativeSso(provider, provider === "saml" ? tenantSlug : undefined);
+    } catch {
+      setNativeSso(null);
+      setError(t("native.login.sso.errOpenBrowser", "無法開啟系統瀏覽器,請重試"));
+    }
+  }
+
+  function cancelNativeSso() {
+    clearPendingSso();
+    setNativeSso(null);
+  }
 
   /**
    * 「使用 Google 登入」:先以 redirect:"manual" 探測 start 端點——
    * - 302(opaqueredirect)→ SSO 已設定,直接整頁導向 start 端點交由後端轉往 Google;
    * - 200 且 code=SSO_DISABLED → 未設定,原地顯示提示(不離開頁面)。
    * 後端連不上等例外一律保底直接導向,交由後端決定。
+   * 原生殼改走系統瀏覽器 + PKCE(WebView 內的 Google 登入會被 Google 拒絕)。
    */
   async function onGoogleLogin() {
+    if (isNative) {
+      await startNativeSso("google");
+      return;
+    }
     setError(null);
     setSsoBusy(true);
     const startUrl = `${config.apiBase.replace(/\/$/, "")}/api/v1/auth/oauth/google/start`;
@@ -135,6 +241,12 @@ export function LoginPage() {
     setNeed2fa(false);
     setChallenge(null);
     setOtp("");
+    setError(null);
+  }
+
+  function resetTenantPick() {
+    setTenantChoices(null);
+    setPickingSlug(null);
     setError(null);
   }
 
@@ -229,17 +341,33 @@ export function LoginPage() {
     }
   }
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  /** 送出登入(帳密 / 2FA 第二步 / 選定工作區後重送共用)。 */
+  async function attemptLogin(tenantOverride?: string) {
+    const useTenant = tenantOverride ?? tenantSlug;
     setSubmitting(true);
     setError(null);
     try {
-      const res = await loginRequest({
+      const res = await loginWithTenant({
         email,
         password,
         otp: need2fa ? otp.trim() : undefined,
         challenge: need2fa ? challenge ?? undefined : undefined,
+        tenant: useTenant || undefined,
       });
+      if (res.requires_tenant_selection) {
+        // 密碼正確但對到多個工作區:顯示清單讓使用者選擇,再帶 tenant 重送
+        const choices = tenantChoicesOf(res);
+        if (choices.length > 0) {
+          setTenantChoices(choices);
+        } else {
+          setError(t("native.login.tenantRequired", "這個帳號屬於多個工作區,請在「工作區(進階)」填寫工作區代號"));
+          setShowAdvanced(true);
+        }
+        return;
+      }
+      // 已確定工作區(含從清單選定):收起清單並記住,後續 2FA 步驟沿用
+      if (tenantOverride !== undefined) setTenant(tenantOverride);
+      setTenantChoices(null);
       if (res.requires_2fa_enrollment) {
         // 組織強制 2FA 但此坐席尚未啟用:進入「設定 2FA」步驟(顯示密鑰 / otpauth,待掃碼驗證)
         setEnroll({
@@ -273,51 +401,75 @@ export function LoginPage() {
       if (err instanceof ApiError && err.code === "INVALID_OTP") {
         setError(t("auth.invalidOtp", { defaultValue: "驗證碼不正確或已過期" }));
       } else if (err instanceof ApiError && err.httpStatus === 401) {
-        setError(t("auth.invalidCredentials", { defaultValue: "電子郵件或密碼不正確" }));
+        setError(
+          useTenant
+            ? t("native.login.invalidWithTenant", "電子郵件、密碼或工作區代號不正確")
+            : t("auth.invalidCredentials", { defaultValue: "電子郵件或密碼不正確" }),
+        );
+      } else if (isNative && isNetworkError(err)) {
+        setError(t("native.login.sso.errNetwork", "無法連線到伺服器,請檢查網路後再試"));
       } else {
         setError(err instanceof Error ? err.message : t("auth.loginFailed", { defaultValue: "登入失敗" }));
       }
     } finally {
       setSubmitting(false);
+      setPickingSlug(null);
     }
   }
 
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    await attemptLogin();
+  }
+
+  async function onPickTenant(slug: string) {
+    setPickingSlug(slug);
+    await attemptLogin(slug);
+  }
+
+  // SSO 按鈕:web 照舊永遠顯示 Google;原生依伺服器 features 決定(SAML 另需填工作區)
+  const showGoogle = isNative ? Boolean(serverInfo?.features.google_sso) : true;
+  const showSaml = isNative && Boolean(serverInfo?.features.saml) && tenantSlug !== "";
+  const ssoLocked = ssoBusy || nativeSso != null || ssoCompleting;
+
+  const errorBox = error && (
+    <div
+      role="alert"
+      className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+    >
+      <AlertCircle className="h-4 w-4 shrink-0" />
+      {error}
+    </div>
+  );
+
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-background p-4">
-      {/* 背景裝飾 */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-brand/10 blur-3xl" />
-        <div className="absolute -bottom-40 -right-24 h-96 w-96 rounded-full bg-info/10 blur-3xl" />
-      </div>
-
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={toggleTheme}
-        className="absolute right-4 top-4"
-        aria-label={t("topbar.theme")}
-      >
-        {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-      </Button>
-
+    <AuthShell
+      topRight={
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={toggleTheme}
+          aria-label={t("topbar.theme")}
+        >
+          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </Button>
+      }
+    >
       <div className="relative w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          {branded && brand.logoUrl ? (
-            <img
-              src={brand.logoUrl}
-              alt={brandName}
-              className="h-12 w-12 rounded-xl object-contain shadow-lg"
-            />
-          ) : (
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-lg">
-              <MessagesSquare className="h-6 w-6" />
-            </div>
-          )}
+          <BrandMark logoUrl={branded ? brand.logoUrl : null} alt={brandName} />
           <div>
             <h1 className="text-lg font-semibold">{brandName}</h1>
             <p className="text-sm text-muted-foreground">{t("login.subtitle")}</p>
           </div>
         </div>
+
+        {isNative && (
+          <div className="mb-4 space-y-2">
+            <AppUpdateBanner info={serverInfo} />
+            <ServerHostBar disabled={submitting || ssoCompleting} />
+          </div>
+        )}
 
         {enroll ? (
           recoveryCodes ? (
@@ -353,12 +505,7 @@ export function LoginPage() {
                 </Button>
               </div>
 
-              {error && (
-                <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  {error}
-                </div>
-              )}
+              {errorBox}
 
               <label className="flex cursor-pointer items-start gap-2 text-sm">
                 <input
@@ -401,6 +548,19 @@ export function LoginPage() {
                 })}
               </p>
 
+              {/* 手機 App:直接把 otpauth:// 交給裝置上的驗證器 App */}
+              {isMobileApp && enroll.otpauthUri && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => void openOtpauth(enroll.otpauthUri)}
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {t("native.login.openAuthenticator", "在驗證器 App 中開啟")}
+                </Button>
+              )}
+
               <div className="space-y-1.5">
                 <Label>{t("login.enroll2fa.secretLabel", { defaultValue: "手動輸入密鑰" })}</Label>
                 <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2">
@@ -413,7 +573,7 @@ export function LoginPage() {
 
               <div className="flex items-start gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                 <QrCode className="mt-0.5 h-4 w-4 shrink-0" />
-                <div className="space-y-1">
+                <div className="min-w-0 space-y-1">
                   <p>
                     {t("login.enroll2fa.scanHint", {
                       defaultValue: "或以下列 otpauth 連結加入驗證器(支援掃碼的 App 可掃描此內容):",
@@ -442,12 +602,7 @@ export function LoginPage() {
                 />
               </div>
 
-              {error && (
-                <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  {error}
-                </div>
-              )}
+              {errorBox}
 
               <Button
                 type="submit"
@@ -470,6 +625,17 @@ export function LoginPage() {
               </button>
             </form>
           )
+        ) : tenantChoices ? (
+          /* 多租戶:選擇工作區後帶 tenant 重送登入 */
+          <div className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
+            <TenantPicker
+              tenants={tenantChoices}
+              busySlug={pickingSlug}
+              onPick={(slug) => void onPickTenant(slug)}
+              onBack={resetTenantPick}
+            />
+            {errorBox}
+          </div>
         ) : (
         <form
           onSubmit={onSubmit}
@@ -507,6 +673,9 @@ export function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="username"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
                   required
                 />
               </div>
@@ -529,17 +698,55 @@ export function LoginPage() {
                   required
                 />
               </div>
+
+              {/* 工作區(進階,預設收合):同一帳號屬於多個工作區、或使用 SAML 時填寫 */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  aria-expanded={showAdvanced}
+                  aria-controls="login-advanced"
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  <ChevronRight
+                    className={cn("h-3 w-3 transition-transform rtl:rotate-180", showAdvanced && "rotate-90 rtl:rotate-90")}
+                  />
+                  {t("native.login.workspaceToggle", "工作區(進階)")}
+                  {!showAdvanced && tenantSlug && (
+                    <span className="max-w-[10rem] truncate font-mono text-foreground">· {tenantSlug}</span>
+                  )}
+                </button>
+                {showAdvanced && (
+                  <div id="login-advanced" className="mt-2 space-y-1.5">
+                    <Label htmlFor="tenant">{t("native.login.workspaceLabel", "工作區代號")}</Label>
+                    <Input
+                      id="tenant"
+                      value={tenant}
+                      onChange={(e) => setTenant(e.target.value)}
+                      placeholder={t("native.login.workspacePlaceholder", "例如 acme")}
+                      autoComplete="organization"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      maxLength={100}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {isNative && serverInfo?.features.saml
+                        ? t(
+                            "native.login.workspaceHintSaml",
+                            "同一帳號屬於多個工作區,或要使用 SAML 單一登入時填寫;其餘情況可留空。",
+                          )
+                        : t("native.login.workspaceHint", "同一帳號屬於多個工作區時填寫;其餘情況可留空。")}
+                    </p>
+                  </div>
+                )}
+              </div>
             </>
           )}
 
-          {error && (
-            <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              {error}
-            </div>
-          )}
+          {errorBox}
 
-          <Button type="submit" className="w-full" disabled={submitting}>
+          <Button type="submit" className="w-full" disabled={submitting || ssoCompleting}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting
               ? t("login.submitting")
@@ -548,7 +755,7 @@ export function LoginPage() {
                 : t("login.submit")}
           </Button>
 
-          {!need2fa && (
+          {!need2fa && (showGoogle || showSaml) && (
             <>
               <div className="flex items-center gap-3">
                 <span className="h-px flex-1 bg-border" />
@@ -557,37 +764,58 @@ export function LoginPage() {
                 </span>
                 <span className="h-px flex-1 bg-border" />
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={onGoogleLogin}
-                disabled={ssoBusy}
-              >
-                {ssoBusy ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <svg className="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1Z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84Z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84C6.71 7.3 9.14 5.38 12 5.38Z"
-                    />
-                  </svg>
-                )}
-                {t("auth.googleLogin", { defaultValue: "使用 Google 登入" })}
-              </Button>
+              {showGoogle && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={onGoogleLogin}
+                  disabled={ssoLocked}
+                >
+                  {ssoBusy || nativeSso === "google" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <GoogleIcon />
+                  )}
+                  {t("auth.googleLogin", { defaultValue: "使用 Google 登入" })}
+                </Button>
+              )}
+              {showSaml && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => void startNativeSso("saml")}
+                  disabled={ssoLocked}
+                >
+                  {nativeSso === "saml" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Building2 className="h-4 w-4" />
+                  )}
+                  <span className="truncate">
+                    {t("native.login.samlLogin", "以 SAML 單一登入 {{slug}}", { slug: tenantSlug })}
+                  </span>
+                </Button>
+              )}
+              {nativeSso && (
+                <p className="text-center text-xs text-muted-foreground" aria-live="polite">
+                  {t("native.login.sso.waiting", "已在瀏覽器開啟登入頁面,完成後會自動回到 App。")}{" "}
+                  <button
+                    type="button"
+                    onClick={cancelNativeSso}
+                    className="font-medium text-foreground underline-offset-2 hover:underline"
+                  >
+                    {t("native.server.cancel", "取消")}
+                  </button>
+                </p>
+              )}
+              {ssoCompleting && (
+                <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground" aria-live="polite">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {t("native.login.sso.completing", "正在完成登入…")}
+                </p>
+              )}
             </>
           )}
 
@@ -615,10 +843,12 @@ export function LoginPage() {
         </form>
         )}
 
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          {t("core.loginApiMode", { api: config.apiBase, mode: config.mockMode })}
-        </p>
+        {!isNative && (
+          <p className="mt-4 text-center text-xs text-muted-foreground">
+            {t("core.loginApiMode", { api: config.apiBase, mode: config.mockMode })}
+          </p>
+        )}
       </div>
-    </div>
+    </AuthShell>
   );
 }

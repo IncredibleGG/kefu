@@ -15,7 +15,8 @@
     "desktopNotification": "Notificaciones de escritorio",
     "desktopNotificationToggle": "Activar notificaciones de escritorio",
     "unreadSummary": "{{total}} sin leer en {{sessions}} conversaciones",
-    "noUnread": "No hay mensajes sin leer"
+    "noUnread": "No hay mensajes sin leer",
+    "primaryNav": "Navegación principal"
   },
   "workspace": {
     "loading": "Cargando…",
@@ -85,7 +86,8 @@
       "read": "Leído",
       "delivered": "Entregado",
       "translatedTag": "Trad.",
-      "imageAlt": "Imagen"
+      "imageAlt": "Imagen",
+      "copy": "Copiar"
     },
     "composer": {
       "cannedHint": "Respuestas rápidas · escribe / y el código",
@@ -115,7 +117,15 @@
       "notePlaceholder": "Resumen de la atención, tareas pendientes…",
       "csatLabel": "Satisfacción",
       "starLabel": "{{n}} estrellas",
-      "submit": "Cerrar y guardar"
+      "submit": "Cerrar y guardar",
+      "closeFailed": "No se pudo cerrar la conversación, inténtalo de nuevo",
+      "saveFailed": "No se pudo guardar el resumen de atención, inténtalo de nuevo",
+      "descriptionNoteOnly": "Solo se guarda el resumen de atención; la conversación no se cerrará.",
+      "internalRatingLabel": "Valoración interna de la atención (opcional)",
+      "clearRating": "Borrar",
+      "internalRatingHint": "Solo como referencia interna de calidad, independiente de la satisfacción del visitante (CSAT). Si no se valora, no se envía, y nunca reemplaza ni se suma a la valoración del visitante.",
+      "submitting": "Procesando…",
+      "saveOnly": "Guardar resumen de atención"
     },
     "sessionTags": {
       "label": "Etiquetas de conversación",
@@ -209,7 +219,15 @@
         "postbackPlaceholder": "Payload que se envía al hacer clic (activa un flujo de bot)",
         "postbackPreview": "Postback (activa un flujo de bot / automatización cuando el visitante hace clic)"
       }
-    }
+    },
+    "createTicket": "Convertir en ticket",
+    "transferFailed": "No se pudo transferir, inténtalo de nuevo",
+    "ticketFromSessionTitle": "Ticket de conversación: {{name}}",
+    "ticketCreated": "Ticket creado",
+    "ticketCreateFailed": "No se pudo crear el ticket, inténtalo de nuevo",
+    "viewTickets": "Ver tickets",
+    "sendFailed": "No se pudo enviar el mensaje, inténtalo de nuevo",
+    "noteSaveFailed": "No se pudo guardar la nota interna, inténtalo de nuevo"
   },
   "core": {
     "loginApiMode": "API: {{api}} · Modo: {{mode}}",
@@ -1026,7 +1044,8 @@
     "save": "Guardar",
     "search": "Buscar",
     "language": "Idioma",
-    "exportCsv": "Exportar CSV"
+    "exportCsv": "Exportar CSV",
+    "copy": "Copiar"
   },
   "login": {
     "demoHint": "Si el backend no está activo, usa cualquier usuario y contraseña para entrar en modo mock",
@@ -1152,7 +1171,10 @@
     "away": "Ausente",
     "busy": "Ocupado",
     "offline": "Desconectado",
-    "online": "En línea"
+    "online": "En línea",
+    "syncNoStaff": "No se pudo identificar tu perfil de agente; el estado no se sincronizó",
+    "syncFailed": "No se pudo cambiar el estado, inténtalo de nuevo",
+    "syncErrorShort": "Estado sin sincronizar"
   },
   "topbar": {
     "account": "Cuenta",
@@ -1321,7 +1343,8 @@
     },
     "emptyValue": "—",
     "deleteConfirm": "¿Seguro que quieres eliminar este campo personalizado? Los valores ya introducidos dejarán de mostrarse, pero se conservarán en los datos de los tickets existentes.",
-    "selectPlaceholder": "Selecciona"
+    "selectPlaceholder": "Selecciona",
+    "requiredMissing": "Rellena primero los campos obligatorios"
   },
   "routing": {
     "queue": {
@@ -1634,7 +1657,8 @@
     "removeParticipant": "Quitar",
     "threadPlaceholder": "Responde al debate; usa @ para mencionar a un compañero…",
     "untitled": "Debate sin título",
-    "searchStaff": "Busca agentes para añadir…"
+    "searchStaff": "Busca agentes para añadir…",
+    "mentionNoteFailed": "No se pudo enviar la nota con @mención, inténtalo de nuevo"
   },
   "reports": {
     "colLevel": "Nivel",
@@ -1870,7 +1894,8 @@
     "cancel": "Cancelar",
     "tags": "Etiquetas",
     "close": "Cerrar",
-    "actions": "Secuencia de acciones"
+    "actions": "Secuencia de acciones",
+    "actionIncomplete": "Hay acciones con campos obligatorios sin completar"
   },
   "knowledge": {
     "manage": {
@@ -2410,7 +2435,8 @@
     "statusQueued": "En cola",
     "statusClosed": "Cerrada",
     "closedBadge": "Cerrada",
-    "reopen": "Reabrir"
+    "reopen": "Reabrir",
+    "visitorTypingPreview": "El visitante está escribiendo: "
   },
   "pagetrail": {
     "error": "Error al cargar el historial de navegación",
@@ -2899,5 +2925,160 @@
       "weekly": "Semanal",
       "monthly": "Mensual"
     }
+  },
+  "native": {
+    "notify": {
+      "channelName": "Notificaciones de mensajes",
+      "channelDesc": "Avisos de mensajes nuevos, asignaciones y transferencias",
+      "visitor": "Visitante"
+    },
+    "server": {
+      "title": "Conectar al servidor",
+      "subtitle": "Introduce la URL del servidor kefu de tu empresa",
+      "urlLabel": "URL del servidor",
+      "connect": "Conectar",
+      "connecting": "Conectando…",
+      "cancel": "Cancelar",
+      "errorEmpty": "Introduce la URL del servidor",
+      "errorInvalid": "El formato de la URL no es válido",
+      "errorHttps": "La app solo puede conectarse a servidores https://",
+      "errorNotKefu": "Esta URL no es un servidor kefu",
+      "errorOutdated": "Este servidor requiere una versión más reciente de la app. Actualízala primero",
+      "errorUnreachable": "No se puede conectar al servidor. Comprueba la URL y la red",
+      "switchTitle": "¿Cambiar de servidor?",
+      "switchDesc": "Un enlace solicita conectarse a {{server}}. Tendrás que volver a iniciar sesión tras el cambio.",
+      "switchConfirm": "Ir a la configuración",
+      "intro": "Introduce la URL del servidor kefu de tu empresa. Si no la conoces, pregunta al administrador del sistema.",
+      "urlHint": "Basta con el dominio, p. ej., kf.example.com (se usará https automáticamente).",
+      "fromLinkHint": "Esta URL proviene de un enlace de configuración. Compruébala antes de continuar.",
+      "test": "Probar conexión",
+      "continue": "Continuar",
+      "back": "Volver sin cambiar",
+      "appVersion": "Versión de la app {{version}}",
+      "saveFailed": "No se pudo guardar la configuración del servidor, inténtalo de nuevo",
+      "linkTitle": "Enlace de configuración del servidor recibido",
+      "linkDesc": "El enlace solicita usar el servidor siguiente. Aplícalo solo si confías en esta URL.",
+      "linkApply": "Usar esta URL",
+      "linkIgnore": "Ignorar",
+      "okTitle": "Conexión correcta",
+      "okHost": "Servidor",
+      "okVersion": "Versión",
+      "okFeatures": "Funciones",
+      "okLegacy": "El servidor está disponible, pero no proporciona información de versión (puede ser una versión anterior).",
+      "featurePassword": "Inicio de sesión con contraseña",
+      "featureGoogle": "Inicio de sesión con Google",
+      "featureSaml": "Inicio de sesión único SAML",
+      "featurePush": "Notificaciones push",
+      "errorEmptyDesc": "Introduce la URL del servidor kefu de tu empresa.",
+      "errorInvalidDesc": "Introduce una URL como https://kf.example.com.",
+      "errorHttpsTitle": "Se requiere una conexión https",
+      "errorNotKefuDesc": "Esta URL responde, pero no es un servicio kefu. Comprueba que la URL sea correcta o pregunta al administrador del sistema.",
+      "errorOfflineTitle": "El dispositivo no tiene conexión",
+      "errorOfflineDesc": "Comprueba la conexión Wi-Fi o de datos móviles e inténtalo de nuevo.",
+      "errorTimeoutTitle": "Tiempo de conexión agotado",
+      "errorTimeoutDesc": "El servidor no respondió a tiempo. Puede que la red sea inestable o que el servidor esté ocupado. Inténtalo de nuevo más tarde.",
+      "errorDnsTitle": "No se encuentra el servidor",
+      "errorDnsDesc": "No se puede resolver ni acceder a esta URL. Comprueba la ortografía y la conexión de red, y asegúrate de que el certificado HTTPS del servidor sea válido."
+    },
+    "login": {
+      "serverLabel": "Servidor",
+      "serverUnknown": "Sin configurar",
+      "changeServer": "Cambiar de servidor",
+      "changeServerTitle": "¿Cambiar de servidor?",
+      "changeServerDesc": "Volverás a la pantalla de configuración del servidor. Tras conectarte a otro servidor, tendrás que iniciar sesión de nuevo con una cuenta de ese servidor.",
+      "changeServerConfirm": "Cambiar",
+      "invalidWithTenant": "Correo electrónico, contraseña o ID del espacio de trabajo incorrectos",
+      "openAuthenticator": "Abrir en la app de autenticación",
+      "samlLogin": "Iniciar sesión en {{slug}} con SAML SSO",
+      "tenantTitle": "Elige un espacio de trabajo",
+      "tenantHint": "Esta cuenta pertenece a varios espacios de trabajo. Elige en cuál quieres iniciar sesión.",
+      "tenantRequired": "Esta cuenta pertenece a varios espacios de trabajo. Introduce el ID en «Espacio de trabajo (avanzado)»",
+      "workspaceToggle": "Espacio de trabajo (avanzado)",
+      "workspaceLabel": "ID del espacio de trabajo",
+      "workspacePlaceholder": "p. ej., acme",
+      "workspaceHint": "Rellénalo si tu cuenta pertenece a varios espacios de trabajo; de lo contrario, déjalo en blanco.",
+      "workspaceHintSaml": "Rellénalo si tu cuenta pertenece a varios espacios de trabajo o si quieres usar el inicio de sesión único SAML; de lo contrario, déjalo en blanco.",
+      "sso": {
+        "waiting": "Se ha abierto la página de inicio de sesión en el navegador. Al terminar, volverás automáticamente a la app.",
+        "completing": "Completando el inicio de sesión…",
+        "errOpenBrowser": "No se pudo abrir el navegador del sistema, inténtalo de nuevo",
+        "errSamlDisabled": "El inicio de sesión único SAML no está activado en este espacio de trabajo. Contacta con el administrador",
+        "errNotInvited": "Esta cuenta no ha sido invitada al espacio de trabajo. Contacta con el administrador",
+        "errUnavailable": "El inicio de sesión único no está disponible temporalmente. Inténtalo de nuevo más tarde",
+        "errInvalidRequest": "Solicitud de inicio de sesión no válida. Actualiza la app e inténtalo de nuevo",
+        "errExpired": "La sesión de inicio de sesión ha caducado. Vuelve a iniciar sesión",
+        "errVerify": "Error al verificar el inicio de sesión. Vuelve a iniciar sesión",
+        "errIpBlocked": "Tu dirección de red actual no está en la lista de acceso permitido. Contacta con el administrador",
+        "err2faEnroll": "Tu organización exige la verificación en dos pasos. Inicia sesión con tu correo y contraseña para completar la configuración",
+        "errSuspended": "Este espacio de trabajo está suspendido. Contacta con el administrador",
+        "errRateLimited": "Demasiados intentos, inténtalo de nuevo más tarde",
+        "errNetwork": "No se puede conectar al servidor. Comprueba tu conexión e inténtalo de nuevo",
+        "errSamlFailed": "Error en el inicio de sesión único SAML, inténtalo de nuevo"
+      }
+    },
+    "update": {
+      "title": "Actualiza la app",
+      "desc": "Este servidor recomienda la versión {{min}} o superior (tienes la {{current}}). Algunas funciones podrían no funcionar correctamente.",
+      "dismiss": "Ahora no"
+    }
+  },
+  "mobile": {
+    "composer": {
+      "placeholder": "Escribe un mensaje… (/ para respuestas rápidas)",
+      "more": "Más herramientas",
+      "closePanel": "Cerrar panel",
+      "enhanceNeedsText": "Escribe algo primero",
+      "cannedEmpty": "No hay respuestas rápidas disponibles",
+      "loading": "Cargando…"
+    },
+    "message": {
+      "actions": "Acciones del mensaje"
+    },
+    "tabBar": "Pestañas principales",
+    "tab": {
+      "visitors": "Visitantes",
+      "more": "Más",
+      "unreadLabel": "{{label}}, {{count}} sin leer"
+    },
+    "openMenu": "Abrir menú",
+    "secondaryNav": "Submenú",
+    "secondaryPickerDesc": "Elige adónde ir",
+    "group": {
+      "account": "Cuenta",
+      "team": "Equipo",
+      "conversation": "Conversaciones",
+      "ai": "IA",
+      "channels": "Canales",
+      "advanced": "Avanzado"
+    },
+    "search": {
+      "hint": "Escribe palabras clave para buscar conversaciones, mensajes y contactos"
+    },
+    "drawer": {
+      "desc": "Navegación, estado del agente y ajustes de la cuenta",
+      "darkMode": "Modo oscuro",
+      "version": "Versión {{version}}",
+      "toggleSub": "Desplegar el submenú de {{label}}"
+    },
+    "context": {
+      "title": "Información del visitante y herramientas"
+    },
+    "conv": {
+      "back": "Volver a las conversaciones",
+      "moreActions": "Más acciones",
+      "backToActions": "Volver",
+      "snoozedNotice": "Pospuesta durante {{duration}}",
+      "unsnoozedNotice": "Posposición cancelada",
+      "snoozeFailed": "No se pudo posponer, inténtalo de nuevo"
+    },
+    "workspace": {
+      "backToList": "Volver a las conversaciones"
+    }
+  },
+  "conn": {
+    "connected": "Conectado",
+    "connecting": "Conectando…",
+    "reconnecting": "Reconectando…",
+    "mock": "Simulación en tiempo real"
   }
 }

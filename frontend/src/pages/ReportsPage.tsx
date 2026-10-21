@@ -61,11 +61,14 @@ export function ReportsPage() {
       title={t("nav.reports")}
       description={t("core.reportsDescription")}
       actions={
+        // 手機(< md):只留圖示,文字改為螢幕閱讀器可讀
         <Button
           variant="outline"
+          className="max-md:aspect-square max-md:px-0"
           onClick={() => downloadFile("/api/v1/exports/reports/overview.csv", "overview.csv").catch(() => {})}
         >
-          <Download className="h-4 w-4" /> {t("common.exportCsv", { defaultValue: "匯出 CSV" })}
+          <Download className="h-4 w-4" />
+          <span className="max-md:sr-only">{t("common.exportCsv", { defaultValue: "匯出 CSV" })}</span>
         </Button>
       }
     >

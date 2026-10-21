@@ -212,12 +212,19 @@ export function TicketsPage() {
       title={t("tickets.title")}
       description={t("tickets.description")}
       actions={
+        // 手機(< md):次要動作只留圖示(文字改為螢幕閱讀器可讀),主要動作「新建」保留文字
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setFieldSettingsOpen(true)}>
-            <Settings2 className="h-4 w-4" /> {t("fields.settings.open", { defaultValue: "欄位設定" })}
+          <Button
+            variant="outline"
+            className="max-md:aspect-square max-md:px-0"
+            onClick={() => setFieldSettingsOpen(true)}
+          >
+            <Settings2 className="h-4 w-4" />
+            <span className="max-md:sr-only">{t("fields.settings.open", { defaultValue: "欄位設定" })}</span>
           </Button>
           <Button
             variant="outline"
+            className="max-md:aspect-square max-md:px-0"
             onClick={() =>
               // 匯出帶入當前篩選(狀態 / 優先級 / 指派人),對齊後端 tickets.csv 支援的 query
               downloadFile("/api/v1/exports/tickets.csv", "tickets.csv", {
@@ -227,7 +234,8 @@ export function TicketsPage() {
               }).catch(() => {})
             }
           >
-            <Download className="h-4 w-4" /> {t("common.exportCsv", { defaultValue: "匯出 CSV" })}
+            <Download className="h-4 w-4" />
+            <span className="max-md:sr-only">{t("common.exportCsv", { defaultValue: "匯出 CSV" })}</span>
           </Button>
           <Button onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4" /> {t("tickets.new")}
@@ -235,9 +243,9 @@ export function TicketsPage() {
         </div>
       }
     >
-      {/* 篩選列 */}
+      {/* 篩選列(手機:搜尋獨佔一列,下拉兩兩一列並撐滿) */}
       <div className="mb-3 flex flex-wrap items-end gap-2">
-        <div className="relative w-56 max-w-full">
+        <div className="relative w-56 max-w-full max-md:w-full">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={q}
@@ -246,7 +254,7 @@ export function TicketsPage() {
             className="h-9 pl-8"
           />
         </div>
-        <div className="w-36">
+        <div className="w-36 max-md:min-w-[45%] max-md:flex-1">
           <Label className="mb-1 block text-xs text-muted-foreground">{t("tickets.filters.status")}</Label>
           <select
             className={SELECT_CLS}
@@ -264,7 +272,7 @@ export function TicketsPage() {
             ))}
           </select>
         </div>
-        <div className="w-36">
+        <div className="w-36 max-md:min-w-[45%] max-md:flex-1">
           <Label className="mb-1 block text-xs text-muted-foreground">{t("tickets.filters.priority")}</Label>
           <select
             className={SELECT_CLS}
@@ -282,7 +290,7 @@ export function TicketsPage() {
             ))}
           </select>
         </div>
-        <div className="w-44">
+        <div className="w-44 max-md:min-w-[45%] max-md:flex-1">
           <Label className="mb-1 block text-xs text-muted-foreground">{t("tickets.filters.assignee")}</Label>
           <select
             className={SELECT_CLS}
@@ -302,7 +310,7 @@ export function TicketsPage() {
         </div>
         {/* 逾期 / 到期排序切換 */}
         <div className="flex items-center gap-3 pb-1">
-          <label className="flex cursor-pointer items-center gap-1.5 text-sm">
+          <label className="flex cursor-pointer items-center gap-1.5 text-sm pointer-coarse:min-h-10">
             <input
               type="checkbox"
               className="h-4 w-4"
@@ -314,7 +322,7 @@ export function TicketsPage() {
             />
             {t("tickets.filters.overdue", { defaultValue: "只看逾期" })}
           </label>
-          <label className="flex cursor-pointer items-center gap-1.5 text-sm">
+          <label className="flex cursor-pointer items-center gap-1.5 text-sm pointer-coarse:min-h-10">
             <input
               type="checkbox"
               className="h-4 w-4"
@@ -344,116 +352,120 @@ export function TicketsPage() {
           </Button>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-xs text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.title")}</th>
-                <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.status")}</th>
-                <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.priority")}</th>
-                <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.assignee")}</th>
-                <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.due", { defaultValue: "到期" })}</th>
-                <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.relation")}</th>
-                <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.createdAt")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.length === 0 && (
+        <>
+          {/* 手機(< md):卡片列表;表格只在 ≥ md 顯示 */}
+          <TicketCardList rows={rows} staffMap={staffMap} onOpen={setOpenId} />
+          <div className="overflow-hidden rounded-lg border border-border max-md:hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 text-xs text-muted-foreground">
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                    <TicketIcon className="mx-auto mb-2 h-6 w-6 opacity-50" />
-                    {t("tickets.empty")}
-                  </td>
+                  <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.title")}</th>
+                  <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.status")}</th>
+                  <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.priority")}</th>
+                  <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.assignee")}</th>
+                  <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.due", { defaultValue: "到期" })}</th>
+                  <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.relation")}</th>
+                  <th className="px-4 py-2.5 text-left font-medium">{t("tickets.col.createdAt")}</th>
                 </tr>
-              )}
-              {rows.map((it) => (
-                <tr
-                  key={it.id}
-                  onClick={() => setOpenId(it.id)}
-                  className="cursor-pointer hover:bg-accent"
-                >
-                  <td className="px-4 py-2.5 font-medium">{it.title}</td>
-                  <td className="px-4 py-2.5">
-                    <Badge variant={STATUS_VARIANT[it.status]}>{t(`tickets.status.${it.status}`)}</Badge>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <Badge variant={PRIORITY_VARIANT[it.priority]}>{t(`tickets.priority.${it.priority}`)}</Badge>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {it.assignee_staff_id ? (
-                      <span className="inline-flex items-center gap-1">
-                        <User className="h-3.5 w-3.5 text-muted-foreground" />
-                        {staffMap.get(it.assignee_staff_id) ?? it.assignee_staff_id.slice(0, 8)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">{t("tickets.unassigned")}</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    {it.due_at ? (
-                      <div className="flex flex-col gap-0.5">
-                        <span
-                          className={
-                            it.overdue
-                              ? "inline-flex items-center gap-1 font-medium text-destructive"
-                              : "inline-flex items-center gap-1 text-muted-foreground"
-                          }
-                        >
-                          {it.overdue ? (
-                            <AlertTriangle className="h-3.5 w-3.5" />
-                          ) : (
-                            <CalendarClock className="h-3.5 w-3.5" />
-                          )}
-                          {timeAgo(it.due_at)}
+              </thead>
+              <tbody className="divide-y divide-border">
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
+                      <TicketIcon className="mx-auto mb-2 h-6 w-6 opacity-50" />
+                      {t("tickets.empty")}
+                    </td>
+                  </tr>
+                )}
+                {rows.map((it) => (
+                  <tr
+                    key={it.id}
+                    onClick={() => setOpenId(it.id)}
+                    className="cursor-pointer hover:bg-accent"
+                  >
+                    <td className="px-4 py-2.5 font-medium">{it.title}</td>
+                    <td className="px-4 py-2.5">
+                      <Badge variant={STATUS_VARIANT[it.status]}>{t(`tickets.status.${it.status}`)}</Badge>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <Badge variant={PRIORITY_VARIANT[it.priority]}>{t(`tickets.priority.${it.priority}`)}</Badge>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {it.assignee_staff_id ? (
+                        <span className="inline-flex items-center gap-1">
+                          <User className="h-3.5 w-3.5 text-muted-foreground" />
+                          {staffMap.get(it.assignee_staff_id) ?? it.assignee_staff_id.slice(0, 8)}
                         </span>
-                        <span className="flex gap-1">
-                          {it.overdue && (
-                            <Badge variant="destructive">
-                              {t("tickets.badge.overdue", { defaultValue: "逾期" })}
-                            </Badge>
-                          )}
-                          {it.snoozed_until && new Date(it.snoozed_until) > new Date() && (
-                            <Badge variant="secondary">
-                              <BellOff className="h-3 w-3" />{" "}
-                              {t("tickets.badge.snoozed", { defaultValue: "已延後" })}
-                            </Badge>
-                          )}
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex flex-wrap gap-1">
-                      {it.session_id && (
-                        <Badge variant="secondary" className="font-mono">
-                          <MessageSquare className="h-3 w-3" /> {it.session_id.slice(0, 8)}
-                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">{t("tickets.unassigned")}</span>
                       )}
-                      {it.contact_id && (
-                        <Badge variant="secondary" className="font-mono">
-                          <UserRound className="h-3 w-3" /> {it.contact_id.slice(0, 8)}
-                        </Badge>
-                      )}
-                      {!it.session_id && !it.contact_id && (
+                    </td>
+                    <td className="px-4 py-2.5">
+                      {it.due_at ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span
+                            className={
+                              it.overdue
+                                ? "inline-flex items-center gap-1 font-medium text-destructive"
+                                : "inline-flex items-center gap-1 text-muted-foreground"
+                            }
+                          >
+                            {it.overdue ? (
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                            ) : (
+                              <CalendarClock className="h-3.5 w-3.5" />
+                            )}
+                            {timeAgo(it.due_at)}
+                          </span>
+                          <span className="flex gap-1">
+                            {it.overdue && (
+                              <Badge variant="destructive">
+                                {t("tickets.badge.overdue", { defaultValue: "逾期" })}
+                              </Badge>
+                            )}
+                            {it.snoozed_until && new Date(it.snoozed_until) > new Date() && (
+                              <Badge variant="secondary">
+                                <BellOff className="h-3 w-3" />{" "}
+                                {t("tickets.badge.snoozed", { defaultValue: "已延後" })}
+                              </Badge>
+                            )}
+                          </span>
+                        </div>
+                      ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-muted-foreground">
-                    {it.created_at ? timeAgo(it.created_at) : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap gap-1">
+                        {it.session_id && (
+                          <Badge variant="secondary" className="font-mono">
+                            <MessageSquare className="h-3 w-3" /> {it.session_id.slice(0, 8)}
+                          </Badge>
+                        )}
+                        {it.contact_id && (
+                          <Badge variant="secondary" className="font-mono">
+                            <UserRound className="h-3 w-3" /> {it.contact_id.slice(0, 8)}
+                          </Badge>
+                        )}
+                        {!it.session_id && !it.contact_id && (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-muted-foreground">
+                      {it.created_at ? timeAgo(it.created_at) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* 分頁 */}
       {!listQuery.isLoading && !listQuery.isError && total > 0 && (
-        <div className="mt-3 flex items-center justify-between text-sm">
+        <div className="mt-3 flex items-center justify-between text-sm max-md:gap-2">
           <span className="text-muted-foreground">
             {t("tickets.page.info", { page, totalPages, total })}
           </span>
@@ -493,6 +505,89 @@ export function TicketsPage() {
         onClose={() => setFieldSettingsOpen(false)}
       />
     </PageShell>
+  );
+}
+
+/* ========================== 手機卡片列表(< md) ========================== */
+/** 手機版工單列表:取代 7 欄表格(只在 < md 渲染),點卡片開啟詳情。
+ *  欄位取捨:標題 + 狀態為主,次列放優先級 / 指派人 / 到期 / 延後 / 建立時間;關聯 id 留在詳情。 */
+function TicketCardList({
+  rows,
+  staffMap,
+  onOpen,
+}: {
+  rows: Ticket[];
+  staffMap: Map<string, string>;
+  onOpen: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border md:hidden">
+      {rows.length === 0 && (
+        <li className="px-4 py-12 text-center text-sm text-muted-foreground">
+          <TicketIcon className="mx-auto mb-2 h-6 w-6 opacity-50" />
+          {t("tickets.empty")}
+        </li>
+      )}
+      {rows.map((it) => {
+        const snoozed = !!it.snoozed_until && new Date(it.snoozed_until) > new Date();
+        return (
+          <li key={it.id}>
+            <button
+              type="button"
+              onClick={() => onOpen(it.id)}
+              className="flex w-full flex-col gap-2 px-3 py-3 text-left text-sm transition-colors hover:bg-accent active:bg-accent"
+            >
+              <span className="flex w-full items-start justify-between gap-2">
+                <span className="line-clamp-2 min-w-0 break-words font-medium">{it.title}</span>
+                <Badge variant={STATUS_VARIANT[it.status]} className="shrink-0">
+                  {t(`tickets.status.${it.status}`)}
+                </Badge>
+              </span>
+              <span className="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted-foreground">
+                <Badge variant={PRIORITY_VARIANT[it.priority]}>{t(`tickets.priority.${it.priority}`)}</Badge>
+                <span className="inline-flex min-w-0 items-center gap-1">
+                  <User className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">
+                    {it.assignee_staff_id
+                      ? staffMap.get(it.assignee_staff_id) ?? it.assignee_staff_id.slice(0, 8)
+                      : t("tickets.unassigned")}
+                  </span>
+                </span>
+                {it.due_at && (
+                  <span
+                    className={
+                      it.overdue
+                        ? "inline-flex items-center gap-1 font-medium text-destructive"
+                        : "inline-flex items-center gap-1"
+                    }
+                  >
+                    {it.overdue ? (
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                    ) : (
+                      <CalendarClock className="h-3.5 w-3.5" />
+                    )}
+                    {timeAgo(it.due_at)}
+                    {it.overdue && (
+                      <Badge variant="destructive">
+                        {t("tickets.badge.overdue", { defaultValue: "逾期" })}
+                      </Badge>
+                    )}
+                  </span>
+                )}
+                {snoozed && (
+                  <Badge variant="secondary">
+                    <BellOff className="h-3 w-3" />
+                    {t("tickets.badge.snoozed", { defaultValue: "已延後" })}
+                  </Badge>
+                )}
+                {it.created_at && <span className="ms-auto">{timeAgo(it.created_at)}</span>}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -690,8 +785,8 @@ function TicketDetailDialog({
               </div>
             )}
 
-            {/* 狀態 + 指派(即時套用) */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* 狀態 + 指派(即時套用);窄手機改單欄,下拉不被擠成半寬 */}
+            <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
               <div className="space-y-1.5">
                 <Label>{t("tickets.detail.changeStatus")}</Label>
                 <select
@@ -1092,7 +1187,7 @@ function CreateTicketDialog({
               placeholder={t("tickets.form.descriptionPlaceholder")}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
             <div className="space-y-1.5">
               <Label htmlFor="ct-prio">{t("tickets.form.priority")}</Label>
               <select
@@ -1125,7 +1220,7 @@ function CreateTicketDialog({
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
             <div className="space-y-1.5">
               <Label htmlFor="ct-session">{t("tickets.form.sessionId")}</Label>
               <Input

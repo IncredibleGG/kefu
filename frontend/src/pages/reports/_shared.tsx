@@ -1,6 +1,7 @@
 /** 報表分頁共用零件:KPI 卡、區塊卡、查詢狀態(載入 / 錯誤 / 空)、圖表樣式常數。
  *  乾淨室新增檔;僅供 reports/ 子頁使用,不外洩到其他頁。 */
 import type { ReactNode } from "react";
+import type { XAxisProps } from "recharts";
 import { useTranslation } from "react-i18next";
 import { AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,17 @@ export const TOOLTIP_STYLE = {
   borderRadius: 8,
   fontSize: 12,
 } as const;
+
+/**
+ * 類別型 X 軸(坐席名稱等)統一設定:刻度外觀同現有圖表;minTickGap 讓窄螢幕(手機)上
+ * 擠在一起的標籤自動略過,不重疊;preserveStartEnd 保留頭尾刻度。
+ * 用法:`<XAxis dataKey="name" {...CATEGORY_X_AXIS} />`
+ */
+export const CATEGORY_X_AXIS = {
+  tick: { fontSize: 11, fill: "hsl(var(--muted-foreground))" },
+  minTickGap: 8,
+  interval: "preserveStartEnd",
+} as const satisfies Partial<XAxisProps>;
 
 /** KPI 卡片:標題 + 主數值 + 選填提示 */
 export function KpiCard({ label, value, hint }: { label: string; value: string; hint?: string }) {

@@ -40,6 +40,7 @@ function inline(s: string): string {
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    // URL 僅允許 http(s) 且不含空白/引號/角括號,雙重防止屬性跳脫注入
+    // URL 僅允許 http(s) 且不含空白/引號/角括號,雙重防止屬性跳脫注入。
+    // 原生殼內 target=_blank 由 lib/platform 的全域連結攔截器改交系統瀏覽器開啟。
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)"'<>]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 }

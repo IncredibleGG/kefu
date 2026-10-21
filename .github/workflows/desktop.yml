@@ -1,0 +1,230 @@
+# 桌面版(Tauri 2):Windows(.msi + NSIS .exe)與 macOS(.dmg,ad-hoc 簽章)。
+# 只建置、不建 Release;正式發佈由 release.yml 以 workflow_call 呼叫本檔(universal: true)。
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '!frontend/android/**'
+      - '!frontend/ios/**'
+      - 'clients/**'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+    inputs:
+      universal:
+        type: boolean
+        default: false
+        description: 'macOS 建 universal(Intel + Apple Silicon,約 2 倍編譯時間)'
+  workflow_call:
+    inputs:
+      universal:
+        type: boolean
+        default: false
+
+# 被呼叫時 github.workflow 是呼叫端的名稱,所以用固定字首
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            rust_targets: ''
+            args: '--bundles msi,nsis'
+          - name: macos
+            os: macos-latest
+            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            # 平常只建 aarch64;手動勾選、tag 或 release 呼叫時建 universal
+            args: ${{ (inputs.universal || startsWith(github.ref, 'refs/tags/')) && '--target universal-apple-darwin --bundles app,dmg' || '--target aarch64-apple-darwin --bundles app,dmg' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # 建置號取 git commit 數,需要完整歷史
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'frontend/src-tauri -> target'
+          key: ${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: 注入品牌與版本
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 建置號 = commit 數:同一 commit 在各 workflow 一致且單調遞增,
+          # 避免 run_number 各自計數造成 Android versionCode 倒退而無法覆蓋安裝
+          args=(--build "$(git rev-list --count HEAD)")
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            v="${GITHUB_REF_NAME#v}"
+            v="${v%%[-+]*}"   # MSI 只接受數字版本,去掉 -beta.1 之類的字尾
+            args+=(--version "$v")
+          fi
+          node clients/scripts/sync-brand.mjs "${args[@]}"
+
+      - name: 清掉快取裡的舊安裝檔
+        shell: bash
+        run: rm -rf frontend/src-tauri/target/release/bundle frontend/src-tauri/target/*/release/bundle
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          # ad-hoc 簽章(tauri.conf.json 也有設 signingIdentity "-");Windows 會忽略
+          APPLE_SIGNING_IDENTITY: '-'
+        with:
+          projectPath: frontend      # 會執行 npm run tauri build -- <args>
+          args: ${{ matrix.args }}
+          retryAttempts: 1           # CI 上 DMG 偶爾失敗
+          # 不填 tagName / releaseName / releaseId:只建置,不建 Release
+
+      - name: 收集安裝檔
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-desktop
+          find frontend/src-tauri/target -type f -path '*/release/bundle/*' \
+            \( -name '*.msi' -o -name '*-setup.exe' -o -name '*.dmg' \) \
+            -exec cp {} dist-desktop/ \;
+          ls -la dist-desktop
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kefu-desktop-${{ matrix.name }}
+          path: dist-desktop/*
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------- 冒煙測試:裝起來、打開、截圖(暫不擋流程) ----------
+
+  smoke-macos:
+    name: smoke (macos)
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: kefu-desktop-macos
+          path: pkg
+      - name: 掛載 dmg、啟動 App、截圖
+        shell: bash
+        run: |
+          set -euxo pipefail
+          out="$GITHUB_WORKSPACE/smoke"; mkdir -p "$out"
+          dmg=$(ls pkg/*.dmg | head -n 1)
+          mnt=$(mktemp -d)
+          hdiutil attach "$dmg" -nobrowse -readonly -noautoopen -mountpoint "$mnt"
+          src_app=$(find "$mnt" -maxdepth 1 -name '*.app' | head -n 1)
+          app_dir="$RUNNER_TEMP/kefu-smoke"; mkdir -p "$app_dir"
+          cp -R "$src_app" "$app_dir/"
+          hdiutil detach "$mnt" || true
+          app="$app_dir/$(basename "$src_app")"
+          # 從網路下載的未簽章 App 會帶 quarantine 屬性,清掉才不會被 Gatekeeper 擋
+          xattr -cr "$app"
+          codesign -dv "$app" > "$out/codesign.txt" 2>&1 || true
+          open -n --stdout "$out/stdout.log" --stderr "$out/stderr.log" "$app"
+          sleep 20
+          screencapture -x "$out/macos.png"
+          log show --last 3m --style compact --predicate 'process == "kefu"' > "$out/system.log" 2>&1 || true
+          ls -la ~/Library/Logs/DiagnosticReports > "$out/crash-reports.txt" 2>&1 || true
+          if ! pgrep -fl "$app/Contents/MacOS/" > "$out/processes.txt"; then
+            echo "找不到 App 行程(可能已閃退)" | tee "$out/processes.txt"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-macos
+          path: smoke/
+          if-no-files-found: warn
+          retention-days: 14
+
+  smoke-windows:
+    name: smoke (windows)
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: kefu-desktop-windows-x64
+          path: pkg
+      - name: 靜默安裝 NSIS、啟動 App、截圖
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:GITHUB_WORKSPACE 'smoke'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $setup = Get-ChildItem pkg -Filter '*-setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw '找不到 NSIS 安裝檔' }
+          $inst = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          "installer: $($setup.Name) exit=$($inst.ExitCode)" | Tee-Object -FilePath (Join-Path $out 'install.log')
+          # NSIS installMode=currentUser 預設裝在 %LOCALAPPDATA%\kefu
+          $candidates = @(
+            (Join-Path $env:LOCALAPPDATA 'kefu\kefu.exe'),
+            (Join-Path $env:ProgramFiles 'kefu\kefu.exe')
+          )
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            $exe = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles -Filter 'kefu.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $exe) { throw '安裝後找不到 kefu.exe' }
+          "exe: $exe" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          $app = Start-Process -FilePath $exe -PassThru `
+            -RedirectStandardOutput (Join-Path $out 'stdout.log') `
+            -RedirectStandardError (Join-Path $out 'stderr.log')
+          Start-Sleep -Seconds 20
+          $app.Refresh()
+          "pid=$($app.Id) hasExited=$($app.HasExited)" | Tee-Object -FilePath (Join-Path $out 'process.txt')
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+          $bmp.Save((Join-Path $out 'windows.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+          $g.Dispose(); $bmp.Dispose()
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 1, 2; StartTime = (Get-Date).AddMinutes(-10) } -ErrorAction SilentlyContinue |
+            Format-List TimeCreated, ProviderName, Id, Message | Out-File (Join-Path $out 'application-errors.txt')
+          if ($app.HasExited) { throw "kefu.exe 已結束(exit=$($app.ExitCode)),可能啟動失敗" }
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-windows
+          path: smoke/
+          if-no-files-found: warn
+          retention-days: 14

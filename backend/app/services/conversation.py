@@ -172,6 +172,43 @@ def _mask_single_card(card: dict) -> dict:
     return new_card
 
 
+# session.activity 預覽長度上限(字元)
+ACTIVITY_PREVIEW_MAX = 80
+
+
+def activity_preview(content: str | None, content_type: str) -> str:
+    """產生坐席頻道 ``session.activity`` 的訊息預覽。
+
+    - 只對文字型(text / markdown)產生預覽;圖片、檔案、卡片、system 等一律空字串
+      (其 content 多為內部網址或結構化回退,不適合當通知內容)。
+    - 呼叫端須傳入**已遮罩卡號**的 content(add_message 內遮罩後的值)。
+    - 空白摺疊成單一空格後截到 ``ACTIVITY_PREVIEW_MAX`` 字。
+    """
+    if content_type not in ("text", "markdown") or not content:
+        return ""
+    text = " ".join(str(content).split())
+    return text[:ACTIVITY_PREVIEW_MAX]
+
+
+def handoff_origin(
+    operator_id: uuid.UUID | None,
+    previous_handler_id: uuid.UUID | None,
+    note: str | None = None,
+) -> dict:
+    """handoff(接管 / 轉接)事件的來源欄位,所有 handoff 事件一致帶上:
+
+    - ``from_staff_id``:執行此動作的坐席(操作者,與轉接 system 訊息 meta 語義一致);
+    - ``previous_handler_staff_id``:動作前的負責坐席(None = 原本無人 / AI 接待);
+    - ``note``:轉接附言(僅 /transfer 有;其餘為 None)。
+    這些是內部欄位:handoff 事件只發坐席頻道,不進會話頻道(訪客端不得看到坐席 id)。
+    """
+    return {
+        "from_staff_id": str(operator_id) if operator_id else None,
+        "previous_handler_staff_id": str(previous_handler_id) if previous_handler_id else None,
+        "note": note,
+    }
+
+
 async def _emit_automation(
     db: AsyncSession, tenant_id: uuid.UUID, event: str, context: dict
 ) -> None:
@@ -351,11 +388,27 @@ async def add_message(
         "meta": meta,
     }
     await realtime.publish(tenant_id, session_id, realtime.make_event("message.new", payload))
+    # 坐席頻道的列表層級事件:帶足判斷「誰說了什麼、歸誰負責」所需欄位,讓坐席端
+    # (含原生 App)不必訂閱會話頻道也能決定是否通知 / 更新列表。preview 取自上方
+    # 已遮罩卡號的 content,隱私等級與 note.new / visitor_draft 相同(只發坐席頻道)。
     await realtime.publish_agents(
         tenant_id,
         realtime.make_event(
             "session.activity",
-            {"session_id": str(session_id), "last_message_at": session.last_message_at.isoformat()},
+            {
+                "session_id": str(session_id),
+                "last_message_at": session.last_message_at.isoformat(),
+                "message_id": str(message.id),
+                "sender_type": sender_type,
+                "content_type": content_type,
+                "preview": activity_preview(content, content_type),
+                "handler_type": session.handler_type,
+                "handler_staff_id": str(session.handler_staff_id)
+                if session.handler_staff_id
+                else None,
+                "status": session.status,
+                "visitor_id": str(session.visitor_id) if session.visitor_id else None,
+            },
         ),
     )
 

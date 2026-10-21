@@ -16,6 +16,8 @@ import {
   Ticket,
   CheckCircle2,
   RotateCcw,
+  ArrowLeft,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,6 +32,9 @@ import { ServiceSummaryDialog } from "./ServiceSummaryDialog";
 import { TransferDialog } from "./TransferDialog";
 import { SessionTags } from "./SessionTags";
 import { SideConversationPanel, MentionInput } from "./SideConversationPanel";
+import { MobileConversationActions, useBackToInbox } from "./MobileConversationActions";
+import { useContextPanelMode, useContextPanelParam } from "./ContextSheet";
+import { COARSE_QUERY, MOBILE_QUERY } from "@/hooks/useMediaQuery";
 import { useNavigate } from "react-router-dom";
 import {
   useMessages,
@@ -69,8 +74,13 @@ export function ConversationView({ session }: { session: Session }) {
   const [transferOpen, setTransferOpen] = useState(false);
   // 操作錯誤提示(送訊 / 備註 / @提及 / 轉接失敗);以浮層顯示,確保於對話框之上仍可見
   const [actionError, setActionError] = useState<string | null>(null);
-  // 操作成功提示(如建立工單);與 actionError 分開,正向綠色
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  // 操作成功提示(如建立工單、延後);與 actionError 分開,正向綠色。ticket=true 時附「查看工單」入口
+  const [actionNotice, setActionNotice] = useState<{ text: string; ticket?: boolean } | null>(null);
+  // 手機:← 返回、資訊鈕開 ?panel= sheet;平板(md–lg):右欄為抽屜,展開鈕改開抽屜
+  const goBack = useBackToInbox();
+  const contextMode = useContextPanelMode();
+  const { openPanel } = useContextPanelParam();
+  const rootRef = useRef<HTMLDivElement>(null);
   // 坐席 WebSocket 連線狀態(僅訂閱,不管理連線生命週期;連線由 AppLayout 的 useAgentSocket 掌管)
   const [connState, setConnState] = useState<ConnState>("closed");
   // 引用訊息:把某則訊息內容帶入輸入框(帶 nonce 觸發注入)
@@ -152,7 +162,7 @@ export function ConversationView({ session }: { session: Session }) {
       setActionNotice(null);
     },
     onSuccess: () => {
-      setActionNotice(t("workspace.ticketCreated", { defaultValue: "已建立工單" }));
+      setActionNotice({ text: t("workspace.ticketCreated", { defaultValue: "已建立工單" }), ticket: true });
       qc.invalidateQueries({ queryKey: ["tickets"] });
     },
     onError: () =>
@@ -171,6 +181,47 @@ export function ConversationView({ session }: { session: Session }) {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages?.length]);
+
+  // 手機 / 觸控:軟鍵盤彈出或收起(visualViewport resize)、或聚焦本對話的輸入框時捲到底,
+  // 避免最新訊息被鍵盤蓋住。桌面滑鼠環境不觸發(不打斷捲上去閱讀歷史的坐席)。
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || typeof window === "undefined") return;
+    const touchLayout = () =>
+      typeof window.matchMedia === "function" &&
+      (window.matchMedia(COARSE_QUERY).matches || window.matchMedia(MOBILE_QUERY).matches);
+    const isEditable = (el: EventTarget | null) =>
+      el instanceof HTMLElement &&
+      (el.isContentEditable || el.tagName === "TEXTAREA" || el.tagName === "INPUT");
+    const stickToBottom = () => {
+      const el = scrollRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    };
+    let raf = 0;
+    let focusTimer: ReturnType<typeof setTimeout> | undefined;
+    const onViewportResize = () => {
+      if (!touchLayout()) return;
+      const active = document.activeElement;
+      if (!active || !root.contains(active) || !isEditable(active)) return;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(stickToBottom);
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      if (!touchLayout() || !isEditable(e.target)) return;
+      // 等鍵盤動畫與版面縮小後再捲(部分 WebView 不發 visualViewport resize)
+      if (focusTimer) clearTimeout(focusTimer);
+      focusTimer = setTimeout(stickToBottom, 300);
+    };
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", onViewportResize);
+    root.addEventListener("focusin", onFocusIn);
+    return () => {
+      vv?.removeEventListener("resize", onViewportResize);
+      root.removeEventListener("focusin", onFocusIn);
+      cancelAnimationFrame(raf);
+      if (focusTimer) clearTimeout(focusTimer);
+    };
+  }, []);
 
   // 切換會話時同步翻譯開關狀態
   useEffect(() => {
@@ -292,10 +343,15 @@ export function ConversationView({ session }: { session: Session }) {
   }
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col bg-background">
-      {/* 操作失敗浮層提示(送訊 / 備註 / @提及 / 轉接):高 z-index 以於對話框之上仍可見 */}
+    // 手機(< md):以 absolute inset-0 疊在會話清單上(清單保持掛載,捲動位置與分頁狀態保留)
+    <div
+      ref={rootRef}
+      className="flex min-w-0 flex-1 flex-col bg-background max-md:absolute max-md:inset-0 max-md:z-10"
+    >
+      {/* 操作失敗浮層提示(送訊 / 備註 / @提及 / 轉接):高 z-index 以於對話框之上仍可見。
+          top 加上 safe-area(瀏海 / 狀態列);桌面 --safe-top 為 0,位置與原本 top-4 相同 */}
       {actionError && (
-        <div className="fixed left-1/2 top-4 z-[100] flex max-w-[90vw] -translate-x-1/2 items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive shadow-md">
+        <div className="fixed left-1/2 top-[calc(var(--safe-top)+1rem)] z-[100] flex max-w-[90vw] -translate-x-1/2 items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive shadow-md">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span className="flex-1">{actionError}</span>
           <button
@@ -308,18 +364,20 @@ export function ConversationView({ session }: { session: Session }) {
           </button>
         </div>
       )}
-      {/* 操作成功浮層提示(如建立工單) */}
+      {/* 操作成功浮層提示(如建立工單、延後) */}
       {actionNotice && (
-        <div className="fixed left-1/2 top-4 z-[100] flex max-w-[90vw] -translate-x-1/2 items-center gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-xs font-medium text-success shadow-md">
+        <div className="fixed left-1/2 top-[calc(var(--safe-top)+1rem)] z-[100] flex max-w-[90vw] -translate-x-1/2 items-center gap-2 rounded-md border border-success/40 bg-success/10 px-3 py-2 text-xs font-medium text-success shadow-md">
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-          <span className="flex-1">{actionNotice}</span>
-          <button
-            type="button"
-            onClick={() => navigate("/tickets")}
-            className="shrink-0 underline underline-offset-2 hover:opacity-80"
-          >
-            {t("workspace.viewTickets", { defaultValue: "查看工單" })}
-          </button>
+          <span className="flex-1">{actionNotice.text}</span>
+          {actionNotice.ticket && (
+            <button
+              type="button"
+              onClick={() => navigate("/tickets")}
+              className="shrink-0 underline underline-offset-2 hover:opacity-80"
+            >
+              {t("workspace.viewTickets", { defaultValue: "查看工單" })}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setActionNotice(null)}
@@ -330,23 +388,39 @@ export function ConversationView({ session }: { session: Session }) {
           </button>
         </div>
       )}
-      {/* 標頭 */}
-      <div className="flex h-13 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
-        <Avatar className="h-9 w-9">
+      {/* 標頭。手機(< md)為沉浸模式(AppLayout 隱藏頂欄與底部分頁列),本標頭兼當頂欄:
+          高度 56px + 上方 safe-area;桌面樣式不變。 */}
+      <div className="flex h-13 shrink-0 items-center gap-3 border-b border-border bg-card px-4 max-md:h-[calc(3.5rem+var(--safe-top))] max-md:gap-1.5 max-md:ps-1 max-md:pe-1 max-md:pt-safe">
+        {/* 手機:← 返回會話清單 */}
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-10 shrink-0 md:hidden"
+          onClick={goBack}
+          aria-label={t("mobile.conv.back", "返回會話清單")}
+        >
+          <ArrowLeft className="h-5 w-5 rtl:rotate-180" />
+        </Button>
+        <Avatar className="h-9 w-9 max-md:h-8 max-md:w-8">
           <AvatarFallback>{initials(session.visitor.display_name)}</AvatarFallback>
         </Avatar>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
+        <div className="min-w-0 max-md:flex-1">
+          <div className="flex items-center gap-2 max-md:gap-1">
             <span className="truncate font-medium">{session.visitor.display_name}</span>
-            <Badge variant="outline" className="gap-1">
+            <Badge variant="outline" className="gap-1 max-md:hidden">
               <ch.Icon className={`h-3 w-3 ${ch.color}`} />
               {ch.label}
             </Badge>
+            {/* 手機只留渠道圖示 */}
+            <ch.Icon className={`h-3.5 w-3.5 shrink-0 md:hidden ${ch.color}`} aria-label={ch.label} />
             {isAi && (
-              <Badge variant="brand" className="gap-1">
-                <Bot className="h-3 w-3" />
-                {t("workspace.aiHandled")}
-              </Badge>
+              <>
+                <Badge variant="brand" className="gap-1 max-md:hidden">
+                  <Bot className="h-3 w-3" />
+                  {t("workspace.aiHandled")}
+                </Badge>
+                <Bot className="h-3.5 w-3.5 shrink-0 text-brand md:hidden" aria-label={t("workspace.aiHandled")} />
+              </>
             )}
           </div>
           <p className="truncate text-xs text-muted-foreground">
@@ -354,7 +428,85 @@ export function ConversationView({ session }: { session: Session }) {
           </p>
         </div>
 
-        <div className="ml-auto flex items-center gap-1">
+        {/* 手機動作列:主要動作(接手 / 重新開啟)+ 資訊(開情境面板 sheet)+ ⋯ 更多 */}
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 md:hidden">
+          {isClosed ? (
+            <Button
+              size="sm"
+              variant="default"
+              className="gap-1 px-2.5 pointer-coarse:h-10"
+              disabled={handoff.isPending}
+              onClick={reopen}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              {t("conv.reopen", { defaultValue: "重新開啟" })}
+            </Button>
+          ) : (
+            !isMine && (
+              <Button
+                size="sm"
+                variant="default"
+                className="gap-1 px-2.5 pointer-coarse:h-10"
+                disabled={handoff.isPending}
+                onClick={() => handoff.mutate({ action: "takeover" })}
+              >
+                {isAi ? <Bot className="h-3.5 w-3.5" /> : <Hand className="h-3.5 w-3.5" />}
+                {t("workspace.takeover")}
+              </Button>
+            )
+          )}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-10"
+            onClick={() => openPanel("info")}
+            aria-label={t("panel.info")}
+          >
+            <Info className="h-5 w-5" />
+          </Button>
+          <MobileConversationActions
+            sessionId={session.id}
+            isClosed={isClosed}
+            translateOn={translateOn}
+            translateBusy={translateBusy}
+            onToggleTranslate={() => void toggleTranslate()}
+            onTransfer={() => setTransferOpen(true)}
+            onSideConversation={() => setSidePanelOpen(true)}
+            mentionNoteOpen={mentionNoteOpen}
+            onToggleMentionNote={() => setMentionNoteOpen((v) => !v)}
+            onCreateTicket={() => createTicket.mutate()}
+            creatingTicket={createTicket.isPending}
+            onSummary={() => {
+              setCloseMode("summary");
+              setSummaryOpen(true);
+            }}
+            onCloseSession={() => {
+              setCloseMode("close");
+              setSummaryOpen(true);
+            }}
+            onNotice={(text) => {
+              setActionError(null);
+              setActionNotice({ text });
+            }}
+            onError={(text) => setActionError(text)}
+          />
+        </div>
+
+        {/* 桌面動作列(≥ md,樣式與原本相同) */}
+        <div className="ml-auto hidden items-center gap-1 md:flex">
+          {/* md–lg:右欄是抽屜(?panel=),開抽屜鈕放在動作列最前面,窄寬時不會被擠出畫面 */}
+          {contextMode === "drawer" && (
+            <SimpleTooltip label={t("panel.expand")} side="bottom">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t("panel.expand")}
+                onClick={() => openPanel("info")}
+              >
+                <PanelRightOpen className="h-4 w-4" />
+              </Button>
+            </SimpleTooltip>
+          )}
           {/* 連線狀態常駐指示:連線中 / 已連線 / 重新連線中,斷線重連時明顯提示 */}
           <ConnStatus state={connState} />
           {/* 已結束:顯示「已結束」徽章;進行中:顯示服務時長指示 */}
@@ -461,7 +613,8 @@ export function ConversationView({ session }: { session: Session }) {
               <XCircle className="h-4 w-4" />
             </Button>
           </SimpleTooltip>
-          {rightPanelCollapsed && (
+          {/* ≥ lg:右欄折疊時才出現(位置與原本相同) */}
+          {contextMode === "aside" && rightPanelCollapsed && (
             <SimpleTooltip label={t("panel.expand")} side="bottom">
               <Button size="icon-sm" variant="ghost" onClick={() => setRightPanelCollapsed(false)}>
                 <PanelRightOpen className="h-4 w-4" />
@@ -470,6 +623,9 @@ export function ConversationView({ session }: { session: Session }) {
           )}
         </div>
       </div>
+
+      {/* 手機:連線不正常(連線中 / 重新連線中)時於標頭下方顯示細橫幅(桌面由標頭內 ConnStatus 呈現) */}
+      <ConnBanner state={connState} />
 
       {/* 訊息流 */}
       <div ref={scrollRef} className="min-h-0 flex-1 space-y-1 overflow-y-auto px-4 py-3">
@@ -605,7 +761,8 @@ export function ConversationView({ session }: { session: Session }) {
           if (closeMode === "close") {
             await closeSession.mutateAsync({ category, note, csat });
             setSummaryOpen(false);
-            navigate("/workspace");
+            // replace:返回鍵不會再回到已結束的會話
+            navigate("/workspace", { replace: true });
           } else {
             // 僅記服務小結,不結束會話;成功後關閉對話框、留在此會話。
             await serviceSummary.mutateAsync({ category, note, csat });
@@ -641,10 +798,51 @@ function HeaderAction({
  *  連線中與重連中會明顯常駐顯示文字(不因螢幕小而收起),斷線重連時清楚可見。 */
 function ConnStatus({ state }: { state: ConnState }) {
   const { t } = useTranslation();
-  const meta: Record<
-    ConnState,
-    { dot: string; label: string; pulse: boolean; emphasize: boolean }
-  > = {
+  const m = connStatusMeta(t)[state];
+  return (
+    <SimpleTooltip label={m.label} side="bottom">
+      <span
+        role="status"
+        aria-live="polite"
+        className={cn(
+          "flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs",
+          m.emphasize ? "font-medium text-foreground" : "text-muted-foreground",
+        )}
+      >
+        <StatusDot className={m.dot} pulse={m.pulse} />
+        {/* 已連線 / 模擬:小螢幕收起文字保持精簡;連線中 / 重連中:常駐明顯顯示 */}
+        <span className={cn(m.emphasize ? "inline" : "hidden lg:inline")}>{m.label}</span>
+      </span>
+    </SimpleTooltip>
+  );
+}
+
+/** 手機(< md)連線細橫幅:只在需要注意的狀態(連線中 / 重新連線中)出現;已連線與模擬不佔空間。 */
+function ConnBanner({ state }: { state: ConnState }) {
+  const { t } = useTranslation();
+  const m = connStatusMeta(t)[state];
+  if (!m.emphasize) return null;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "flex shrink-0 items-center justify-center gap-1.5 border-b px-3 py-1 text-xs font-medium md:hidden",
+        state === "closed"
+          ? "border-destructive/30 bg-destructive/10 text-destructive"
+          : "border-warning/30 bg-warning/10 text-foreground",
+      )}
+    >
+      <StatusDot className={m.dot} pulse={m.pulse} />
+      <span className="truncate">{m.label}</span>
+    </div>
+  );
+}
+
+function connStatusMeta(
+  t: ReturnType<typeof useTranslation>["t"],
+): Record<ConnState, { dot: string; label: string; pulse: boolean; emphasize: boolean }> {
+  return {
     open: {
       dot: "bg-status-online",
       label: t("conn.connected", { defaultValue: "已連線" }),
@@ -670,21 +868,4 @@ function ConnStatus({ state }: { state: ConnState }) {
       emphasize: false,
     },
   };
-  const m = meta[state];
-  return (
-    <SimpleTooltip label={m.label} side="bottom">
-      <span
-        role="status"
-        aria-live="polite"
-        className={cn(
-          "flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs",
-          m.emphasize ? "font-medium text-foreground" : "text-muted-foreground",
-        )}
-      >
-        <StatusDot className={m.dot} pulse={m.pulse} />
-        {/* 已連線 / 模擬:小螢幕收起文字保持精簡;連線中 / 重連中:常駐明顯顯示 */}
-        <span className={cn(m.emphasize ? "inline" : "hidden lg:inline")}>{m.label}</span>
-      </span>
-    </SimpleTooltip>
-  );
 }

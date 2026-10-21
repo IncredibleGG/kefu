@@ -1,0 +1,120 @@
+# 推 v* tag 時:一次建好全部平台,發佈成 GitHub「預先發行版」(不是草稿,可直接下載)。
+# 版本號取自 tag(去掉 v 與 -beta 之類的字尾,MSI 只接受數字版本)。
+name: release
+
+on:
+  push:
+    tags: ['v*']                     # 推 tag 時不套用 paths 過濾
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false          # 發佈到一半不要被取消
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    uses: ./.github/workflows/desktop.yml
+    with:
+      universal: true
+    secrets: inherit
+
+  android:
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
+  ios:
+    uses: ./.github/workflows/ios.yml
+    secrets: inherit
+
+  publish:
+    name: 發佈 GitHub Release
+    needs: [desktop, android, ios]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      # 桌面版是一般(壓縮)artifact;APK / zip / ipa 是 archive: false 的單一檔案,
+      # 要 skip-decompress,否則 zip 格式的檔案會被自動解開
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: kefu-desktop-*
+          path: out
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: kefu-android-debug.apk
+          path: out
+          skip-decompress: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: kefu-ios-simulator.zip
+          path: out
+          skip-decompress: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: kefu-ios-unsigned.ipa
+          path: out
+          skip-decompress: true
+
+      - name: 整理檔案與說明
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find out -type f -exec mv {} release/ \;
+          cd release
+          ls -la
+          for f in kefu-android-debug.apk kefu-ios-simulator.zip kefu-ios-unsigned.ipa; do
+            test -f "$f" || { echo "::error::缺少 $f"; exit 1; }
+          done
+          ls *.msi *-setup.exe *.dmg > /dev/null
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          cd ..
+          {
+            echo "# kefu ${TAG}(開發預覽版)"
+            echo
+            echo "> 這是**未簽章**的開發版,僅供內部測試。第一次安裝時系統會跳出安全警告,照下面步驟放行即可。"
+            echo "> 首次開啟 App 會先要求設定伺服器(預設 \`https://kf.56k.cc\`),再登入。"
+            echo
+            echo "## Windows(.msi 或 -setup.exe 擇一)"
+            echo "- 建議用 \`*-setup.exe\`(安裝到目前使用者,不需要系統管理員權限);\`.msi\` 適合 IT 統一部署。"
+            echo "- 出現「Windows 已保護您的電腦」(SmartScreen)時,點 **其他資訊 → 仍要執行**。"
+            echo
+            echo "## macOS(.dmg)"
+            echo "- 打開 dmg,把 **kefu** 拖到「應用程式」。"
+            echo "- 第一次開啟若被擋下:到 **系統設定 → 隱私權與安全性**,在下方找到 kefu 按 **強制打開**(macOS 15 起不能再用右鍵「打開」繞過)。"
+            echo "- 或在終端機執行:\`xattr -cr /Applications/kefu.app\` 後再開啟。"
+            echo
+            echo "## Android(kefu-android-debug.apk)"
+            echo "- 用手機下載 APK 後點開安裝;系統詢問時,允許瀏覽器或檔案管理員 **安裝未知來源的應用程式**。"
+            echo "- 若已裝過簽章不同的舊版,需要先解除安裝舊版。"
+            echo
+            echo "## iOS"
+            echo "- **kefu-ios-simulator.zip**:給 Xcode 模擬器用。解壓後把 \`App.app\` 拖進模擬器視窗,或執行 \`xcrun simctl install booted App.app\`。"
+            echo "- **kefu-ios-unsigned.ipa**:實機用、未簽章。請用 [Sideloadly](https://sideloadly.io/) 或 [AltStore](https://altstore.io/) 以自己的 Apple ID 重新簽章後安裝(免費 Apple ID 的簽章 7 天後過期,需重新安裝)。"
+            echo "- **iOS 推播通知需要付費的 Apple Developer 帳號**簽章才收得到;用免費 Apple ID 側載的版本只能在 App 開著時收到即時訊息。"
+            echo
+            echo "## 檔案校驗(SHA-256)"
+            echo '```'
+            cat release/SHA256SUMS.txt
+            echo '```'
+          } > release-notes.md
+          cat release-notes.md
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: kefu ${{ github.ref_name }}(開發預覽版)
+          body_path: release-notes.md
+          draft: false
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release/*

@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name" translatable="false">kefu</string>
+    <string name="title_activity_main" translatable="false">kefu</string>
+    <string name="package_name" translatable="false">cc.kf56k.kefu</string>
+    <string name="custom_url_scheme" translatable="false">kefu</string>
+    <!-- 與前端建立的通知頻道 id 相同(docs/NATIVE-CLIENTS.md §2) -->
+    <string name="default_notification_channel_id" translatable="false">kefu_messages</string>
+    <!-- 通知頻道名稱(使用者可在系統設定看到) -->
+    <string name="notification_channel_messages">Messages</string>
+    <string name="notification_channel_messages_desc">New visitor messages, assignments and transfers</string>
+</resources>

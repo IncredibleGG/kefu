@@ -1,4 +1,5 @@
-import { config, STORAGE_KEYS } from "@/lib/config";
+import { config } from "@/lib/config";
+import { apiUrl, getToken } from "@/lib/server";
 import type { Envelope } from "@/types";
 
 /** API 錯誤(帶後端錯誤碼) */
@@ -19,12 +20,9 @@ export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
-function getToken(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEYS.token);
-  } catch {
-    return null;
-  }
+/** 觸發與 REST 401 相同的登出流程(供 WebSocket 收到 close 4401 等非 fetch 路徑使用)。 */
+export function triggerUnauthorized() {
+  onUnauthorized?.();
 }
 
 export interface RequestOptions {
@@ -35,18 +33,9 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
+/** 組 REST URL:統一交給 lib/server.apiUrl(web 沿用 apiBase / 同源;原生殼用使用者設定的伺服器)。 */
 function buildUrl(path: string, params?: RequestOptions["params"]): string {
-  const base = config.apiBase.replace(/\/$/, "");
-  const qs = new URLSearchParams();
-  if (params) {
-    for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined) qs.set(k, String(v));
-    }
-  }
-  const query = qs.toString();
-  // base 為空字串 → 走同源相對路徑(可置於任意網域/CF 隧道後,經 nginx 反代)
-  const full = (base ? base : "") + path;
-  return query ? `${full}?${query}` : full;
+  return apiUrl(path, params);
 }
 
 /**

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 品牌主色(clients/branding/brand.json primaryColor):通知圖示著色用 -->
+    <color name="kefu_primary">#7C5CFF</color>
+</resources>

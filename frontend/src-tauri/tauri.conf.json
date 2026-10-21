@@ -1,0 +1,67 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "kefu",
+  "version": "0.1.0",
+  "identifier": "cc.kf56k.kefu",
+  "build": {
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist-native",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build:native"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "kefu",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 380,
+        "minHeight": 560,
+        "center": true,
+        "resizable": true,
+        "visible": false,
+        "backgroundThrottling": "disabled",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*; img-src 'self' https: data: blob: http://localhost:* http://127.0.0.1:*; media-src 'self' https: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:; object-src 'none'; base-uri 'self'",
+      "dangerousDisableAssetCspModification": ["style-src"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis", "app", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Business",
+    "shortDescription": "kefu customer service agent workspace",
+    "longDescription": "kefu desktop client for customer service agents, supervisors and admins: real-time conversations, assignment, notifications and unread badges.",
+    "copyright": "Copyright (c) 2026 kefu",
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "13.3"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["kefu"]
+      }
+    }
+  }
+}

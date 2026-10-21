@@ -30,6 +30,8 @@ import { billingApi } from "@/api/endpoints";
 import { checkoutApi } from "@/api/checkout";
 import { ApiError, call } from "@/api/client";
 import { cn } from "@/lib/utils";
+import { publicUrl } from "@/lib/server";
+import { isNative, openExternal } from "@/lib/platform";
 import type { FeatureMap, Plan } from "@/types";
 
 const PLAN_ICON: Record<string, typeof Gift> = { free: Gift, pro: Sparkles, enterprise: Crown };
@@ -377,14 +379,17 @@ export function BillingPage() {
     setError(null);
     setStripeNotice(null);
     try {
-      const origin = window.location.origin + window.location.pathname;
+      // Stripe 導回網址必須是 http(s):原生殼用伺服器的公開網址(App origin 為 tauri:// / capacitor://)
+      const origin = isNative ? publicUrl("/billing") : window.location.origin + window.location.pathname;
       const res = await checkoutApi.create(
         plan.id,
         `${origin}?checkout=success`,
         `${origin}?checkout=cancel`,
       );
       if (res.url) {
-        window.location.assign(res.url);
+        // 原生殼:於系統瀏覽器開啟結帳頁,不把 App webview 導離
+        if (isNative) void openExternal(res.url);
+        else window.location.assign(res.url);
       } else {
         setError(t("billing.checkoutFailed", { defaultValue: "建立結帳工作階段失敗" }));
       }

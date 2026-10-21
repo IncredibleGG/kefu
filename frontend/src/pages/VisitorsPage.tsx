@@ -28,6 +28,7 @@ import {
 } from "@/api/hooks";
 import { channelMeta } from "@/lib/channels";
 import { downloadFile } from "@/lib/download";
+import { saveFile } from "@/lib/platform";
 import { initials, timeAgo, hhmm } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import {
@@ -103,24 +104,24 @@ export function VisitorsPage() {
 
   return (
     <PageShell title={title} description={desc}>
-      {/* 篩選列 */}
+      {/* 篩選列(手機:搜尋獨佔一列;標籤改成單列橫向捲動,不疊成好幾行) */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="relative w-64 max-w-full">
+        <div className="relative w-64 max-w-full max-md:w-full">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={t("modules.visitors.searchPlaceholder")}
-            className="h-8 pl-8"
+            className="h-8 pl-8 max-md:h-9"
           />
         </div>
         {(tags ?? []).length > 0 && (
-          <div className="flex flex-wrap items-center gap-1">
-            <TagIcon className="h-3.5 w-3.5 text-muted-foreground" />
+          <div className="flex flex-wrap items-center gap-1 max-md:w-full max-md:flex-nowrap max-md:overflow-x-auto max-md:scrollbar-none">
+            <TagIcon className="h-3.5 w-3.5 text-muted-foreground max-md:shrink-0" />
             <button
               onClick={() => setTagId("")}
               className={cn(
-                "rounded-md border px-2 py-0.5 text-xs transition-colors",
+                "rounded-md border px-2 py-0.5 text-xs transition-colors max-md:shrink-0 pointer-coarse:min-h-10 pointer-coarse:px-3",
                 tagId === ""
                   ? "border-brand bg-brand/10 text-brand"
                   : "border-border text-muted-foreground hover:bg-accent",
@@ -133,7 +134,7 @@ export function VisitorsPage() {
                 key={tg.id}
                 onClick={() => setTagId(tg.id)}
                 className={cn(
-                  "rounded-md border px-2 py-0.5 text-xs transition-colors",
+                  "rounded-md border px-2 py-0.5 text-xs transition-colors max-md:shrink-0 pointer-coarse:min-h-10 pointer-coarse:px-3",
                   tagId === tg.id
                     ? "border-brand bg-brand/10 text-brand"
                     : "border-border text-muted-foreground hover:bg-accent",
@@ -232,14 +233,8 @@ function ImportContactsDialog({
     const blob = new Blob(["﻿" + CONTACT_IMPORT_TEMPLATE], {
       type: "text/csv;charset=utf-8",
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "contacts-template.csv";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    // 交給平台層存檔(web:<a download>;桌面:存檔對話框;手機:分享面板)
+    void saveFile(blob, "contacts-template.csv").catch(() => undefined);
   }
 
   return (
@@ -462,70 +457,114 @@ function VisitorsTable({
 
   const rows = data ?? [];
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-xs text-muted-foreground">
-          <tr>
-            <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.colVisitor")}</th>
-            <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.colChannel")}</th>
-            <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.colRegion")}</th>
-            <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.tags")}</th>
-            <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.colFirstSeen")}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {rows.length === 0 && (
-            <tr>
-              <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                {t("modules.visitors.noData")}
-              </td>
-            </tr>
-          )}
-          {rows.map((v) => {
-            const m = channelMeta[v.channel];
-            return (
-              <tr
-                key={v.id}
+    <>
+      {/* 手機(< md):卡片列表 */}
+      <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border md:hidden">
+        {rows.length === 0 && (
+          <li className="px-4 py-8 text-center text-sm text-muted-foreground">{t("modules.visitors.noData")}</li>
+        )}
+        {rows.map((v) => {
+          const m = channelMeta[v.channel];
+          return (
+            <li key={v.id}>
+              <button
+                type="button"
                 onClick={() => onOpen(v.id)}
-                className="cursor-pointer hover:bg-accent"
+                className="flex w-full items-center gap-3 px-3 py-3 text-left text-sm transition-colors hover:bg-accent active:bg-accent"
               >
-                <td className="px-4 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-7 w-7">
-                      <AvatarFallback>{initials(v.display_name)}</AvatarFallback>
-                    </Avatar>
-                    <span className="font-medium">{v.display_name}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-2.5">
-                  <span className="inline-flex items-center gap-1">
-                    <m.Icon className={`h-4 w-4 ${m.color}`} />
-                    {m.label}
+                <Avatar className="h-9 w-9 shrink-0">
+                  <AvatarFallback>{initials(v.display_name)}</AvatarFallback>
+                </Avatar>
+                <span className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="truncate font-medium">{v.display_name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {v.first_seen ? timeAgo(v.first_seen) : "—"}
+                    </span>
                   </span>
-                </td>
-                <td className="px-4 py-2.5 text-muted-foreground">{v.location ?? "—"}</td>
-                <td className="px-4 py-2.5">
-                  <div className="flex flex-wrap gap-1">
-                    {v.tags.length ? (
-                      v.tags.map((tid) => (
-                        <Badge key={tid} variant="secondary">
-                          {tagMap.get(tid)?.name ?? tid}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-2.5 text-muted-foreground">
-                  {v.first_seen ? timeAgo(v.first_seen) : "—"}
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <m.Icon className={`h-3.5 w-3.5 ${m.color}`} />
+                      {m.label}
+                    </span>
+                    {v.location && <span className="min-w-0 truncate">{v.location}</span>}
+                    {v.tags.map((tid) => (
+                      <Badge key={tid} variant="secondary">
+                        {tagMap.get(tid)?.name ?? tid}
+                      </Badge>
+                    ))}
+                  </span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="overflow-hidden rounded-lg border border-border max-md:hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-xs text-muted-foreground">
+            <tr>
+              <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.colVisitor")}</th>
+              <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.colChannel")}</th>
+              <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.colRegion")}</th>
+              <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.tags")}</th>
+              <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.colFirstSeen")}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+                  {t("modules.visitors.noData")}
                 </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+            )}
+            {rows.map((v) => {
+              const m = channelMeta[v.channel];
+              return (
+                <tr
+                  key={v.id}
+                  onClick={() => onOpen(v.id)}
+                  className="cursor-pointer hover:bg-accent"
+                >
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-7 w-7">
+                        <AvatarFallback>{initials(v.display_name)}</AvatarFallback>
+                      </Avatar>
+                      <span className="font-medium">{v.display_name}</span>
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5">
+                    <span className="inline-flex items-center gap-1">
+                      <m.Icon className={`h-4 w-4 ${m.color}`} />
+                      {m.label}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-muted-foreground">{v.location ?? "—"}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex flex-wrap gap-1">
+                      {v.tags.length ? (
+                        v.tags.map((tid) => (
+                          <Badge key={tid} variant="secondary">
+                            {tagMap.get(tid)?.name ?? tid}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2.5 text-muted-foreground">
+                    {v.first_seen ? timeAgo(v.first_seen) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -554,42 +593,77 @@ function ContactsTable({
 
   const rows = data ?? [];
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-xs text-muted-foreground">
-          <tr>
-            <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.colContact")}</th>
-            <th className="px-4 py-2.5 text-left font-medium">Email</th>
-            <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.phone")}</th>
-            <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.company")}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {rows.length === 0 && (
+    <>
+      {/* 手機(< md):卡片列表 */}
+      <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border md:hidden">
+        {rows.length === 0 && (
+          <li className="px-4 py-8 text-center text-sm text-muted-foreground">{t("modules.visitors.noData")}</li>
+        )}
+        {rows.map((c) => (
+          <li key={c.id}>
+            <button
+              type="button"
+              onClick={() => onOpen(c.id)}
+              className="flex w-full items-center gap-3 px-3 py-3 text-left text-sm transition-colors hover:bg-accent active:bg-accent"
+            >
+              <Avatar className="h-9 w-9 shrink-0">
+                <AvatarFallback>{initials(c.name)}</AvatarFallback>
+              </Avatar>
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate font-medium">{c.name}</span>
+                {(c.email || c.phone) && (
+                  <span className="truncate text-xs text-muted-foreground">
+                    {[c.email, c.phone].filter(Boolean).join(" · ")}
+                  </span>
+                )}
+                {c.company && (
+                  <span className="inline-flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                    <Building2 className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{c.company}</span>
+                  </span>
+                )}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="overflow-hidden rounded-lg border border-border max-md:hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-xs text-muted-foreground">
             <tr>
-              <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
-                {t("modules.visitors.noData")}
-              </td>
+              <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.colContact")}</th>
+              <th className="px-4 py-2.5 text-left font-medium">Email</th>
+              <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.phone")}</th>
+              <th className="px-4 py-2.5 text-left font-medium">{t("modules.visitors.company")}</th>
             </tr>
-          )}
-          {rows.map((c) => (
-            <tr key={c.id} onClick={() => onOpen(c.id)} className="cursor-pointer hover:bg-accent">
-              <td className="px-4 py-2.5">
-                <div className="flex items-center gap-2">
-                  <Avatar className="h-7 w-7">
-                    <AvatarFallback>{initials(c.name)}</AvatarFallback>
-                  </Avatar>
-                  <span className="font-medium">{c.name}</span>
-                </div>
-              </td>
-              <td className="px-4 py-2.5 text-muted-foreground">{c.email ?? "—"}</td>
-              <td className="px-4 py-2.5 text-muted-foreground">{c.phone ?? "—"}</td>
-              <td className="px-4 py-2.5 text-muted-foreground">{c.company ?? "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+                  {t("modules.visitors.noData")}
+                </td>
+              </tr>
+            )}
+            {rows.map((c) => (
+              <tr key={c.id} onClick={() => onOpen(c.id)} className="cursor-pointer hover:bg-accent">
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <Avatar className="h-7 w-7">
+                      <AvatarFallback>{initials(c.name)}</AvatarFallback>
+                    </Avatar>
+                    <span className="font-medium">{c.name}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-2.5 text-muted-foreground">{c.email ?? "—"}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{c.phone ?? "—"}</td>
+                <td className="px-4 py-2.5 text-muted-foreground">{c.company ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -803,7 +877,7 @@ function ContactDetailDialog({
                 <Ban className="h-3 w-3" /> {t("modules.visitors.blocked")}
               </Badge>
             )}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
               <div className="space-y-1.5">
                 <Label htmlFor="ct-name">{t("modules.visitors.name")}</Label>
                 <Input id="ct-name" value={name} onChange={(e) => setName(e.target.value)} />

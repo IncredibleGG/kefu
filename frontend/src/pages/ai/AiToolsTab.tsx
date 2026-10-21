@@ -48,8 +48,9 @@ function ToolCard({ tool }: { tool: AiToolSpec }) {
             {t("aitools.noParams", { defaultValue: "無參數" })}
           </p>
         ) : (
-          <div className="overflow-hidden rounded-md border border-border">
-            <table className="w-full text-left text-xs">
+          // 手機(< md):參數表保留最小寬度並在框內橫向捲動(等寬參數名不會被切掉)
+          <div className="overflow-hidden rounded-md border border-border max-md:overflow-x-auto">
+            <table className="w-full text-left text-xs max-md:min-w-[28rem]">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
                   <th className="px-3 py-1.5 font-medium">

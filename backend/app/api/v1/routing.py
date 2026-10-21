@@ -193,7 +193,7 @@ async def assign_to(
     """手動把會話指派給指定坐席(需 routing.manage 權限)。"""
     staff.require("routing.manage")
     assigned = await routing_svc.manual_assign(
-        db, staff.tenant_id, session_id, target_staff_id
+        db, staff.tenant_id, session_id, target_staff_id, actor_staff_id=staff.staff_id
     )
     if assigned is None:
         raise HTTPException(
@@ -206,7 +206,7 @@ async def assign_to(
 async def claim(session_id: uuid.UUID, staff: CurrentStaff, db: DbSession):
     """搶單:當前坐席主動認領一個(通常在佇列中的)會話。"""
     assigned = await routing_svc.manual_assign(
-        db, staff.tenant_id, session_id, staff.staff_id
+        db, staff.tenant_id, session_id, staff.staff_id, actor_staff_id=staff.staff_id
     )
     if assigned is None:
         raise HTTPException(

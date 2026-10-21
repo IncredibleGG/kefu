@@ -1,6 +1,7 @@
 /** 白牌品牌 bootstrap:App 啟動時依網域解析租戶品牌,套用品牌色到 CSS 變數。 */
 import { brandingApi } from "@/api/endpoints";
 import { useBrand } from "@/stores/brand";
+import { serverHost } from "@/lib/server";
 
 /**
  * hex 色 → "H S% L%"(對齊設計系統 --brand 的 HSL 分量格式,見 styles/index.css)。
@@ -56,13 +57,14 @@ export function applyBrandColor(hex: string | null | undefined): void {
 }
 
 /**
- * 啟動時解析品牌:以 window.location.host 打公開端點。
+ * 啟動時解析品牌:以伺服器 host(lib/server.serverHost;web 同源部署即 window.location.host,
+ * 原生殼為使用者設定的伺服器)打公開端點。原生殼需在伺服器設定完成 / 更換後才呼叫。
  * - 非預設(命中租戶網域)→ 套品牌色到 --brand、更新分頁標題、填入品牌態供登入頁使用。
  * - 預設 / fetch 失敗 → 沿用內建預設,不套色也不崩(僅標記 ready 讓登入頁停止等待)。
  */
 export async function bootstrapBranding(): Promise<void> {
   try {
-    const host = typeof window !== "undefined" ? window.location.host : "";
+    const host = serverHost();
     const brand = await brandingApi.resolveBranding(host);
     if (!brand.is_default) {
       applyBrandColor(brand.primary_color);

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { apiFetch } from "@/api/client";
+import { publicUrl as serverPublicUrl } from "@/lib/server";
 import { knowledgeContentApi, kkeys, type ManagedCollection } from "@/api/knowledgeContent";
 import { DocumentManager } from "./DocumentManager";
 import { QaManager } from "./QaManager";
@@ -47,9 +48,9 @@ export function CollectionDetail({
   const busy = publish.isPending || unpublish.isPending;
   const publicUrl =
     collection.is_published && collection.public_slug && tenantSlug
-      ? `${window.location.origin}/help/${encodeURIComponent(tenantSlug)}?c=${encodeURIComponent(
-          collection.public_slug,
-        )}`
+      ? serverPublicUrl(
+          `/help/${encodeURIComponent(tenantSlug)}?c=${encodeURIComponent(collection.public_slug)}`,
+        )
       : null;
 
   async function copyLink() {

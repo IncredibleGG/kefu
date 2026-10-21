@@ -33,6 +33,13 @@ services:
       KEFU_SECRET_KEY: ${KEFU_SECRET_KEY:-}
       # CORS 白名單(逗號分隔)或 "*" 全開;widget 跨網域嵌入預設全開
       KEFU_CORS_ORIGINS: ${KEFU_CORS_ORIGINS:-*}
+      # 原生 App SSO(PKCE)允許的回呼 redirect_uri(逗號分隔、完全相等比對)
+      KEFU_NATIVE_REDIRECT_URIS: ${KEFU_NATIVE_REDIRECT_URIS:-kefu://auth/callback}
+      # 行動推播(FCM HTTP v1):服務帳號 JSON 內容或容器內檔案路徑;未設 = 推播完全不動作
+      KEFU_FCM_SERVICE_ACCOUNT_JSON: ${KEFU_FCM_SERVICE_ACCOUNT_JSON:-}
+      KEFU_FCM_PROJECT_ID: ${KEFU_FCM_PROJECT_ID:-}
+      # false = 推播不帶訊息內容 / 訪客名稱,只顯示「新訊息」
+      KEFU_PUSH_PREVIEW: ${KEFU_PUSH_PREVIEW:-true}
       KEFU_ENVIRONMENT: dev
       KEFU_UPLOAD_DIR: /data/uploads
     volumes:

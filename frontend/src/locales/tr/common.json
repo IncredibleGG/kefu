@@ -93,7 +93,10 @@
     "online": "Çevrimiçi",
     "busy": "Meşgul",
     "away": "Uzakta",
-    "offline": "Çevrimdışı"
+    "offline": "Çevrimdışı",
+    "syncNoStaff": "Temsilci kimliği alınamadı, durum eşitlenmedi",
+    "syncFailed": "Durum değiştirilemedi, lütfen tekrar deneyin",
+    "syncErrorShort": "Durum eşitlenmedi"
   },
   "login": {
     "title": "Temsilci Çalışma Alanı'na giriş yap",
@@ -216,7 +219,8 @@
       "read": "Okundu",
       "delivered": "İletildi",
       "translatedTag": "Çevrildi",
-      "imageAlt": "Görsel"
+      "imageAlt": "Görsel",
+      "copy": "Kopyala"
     },
     "composer": {
       "cannedHint": "Hazır yanıtlar · / yazıp ardından bir kısayol girin",
@@ -246,7 +250,15 @@
       "notePlaceholder": "Hizmet özeti, takip görevleri…",
       "csatLabel": "Memnuniyet",
       "starLabel": "{{n}} yıldız",
-      "submit": "Kapat ve kaydet"
+      "submit": "Kapat ve kaydet",
+      "closeFailed": "Görüşme sonlandırılamadı, lütfen tekrar deneyin",
+      "saveFailed": "Hizmet özeti kaydedilemedi, lütfen tekrar deneyin",
+      "descriptionNoteOnly": "Yalnızca bu hizmet özeti kaydedilir; görüşme sonlandırılmaz.",
+      "internalRatingLabel": "Dahili değerlendirme (isteğe bağlı)",
+      "clearRating": "Temizle",
+      "internalRatingHint": "Yalnızca dahili kalite referansı içindir ve ziyaretçi memnuniyetinden (CSAT) ayrıdır; puan verilmezse gönderilmez, ziyaretçi puanının üzerine yazmaz ve ona dahil edilmez.",
+      "submitting": "İşleniyor…",
+      "saveOnly": "Hizmet özetini kaydet"
     },
     "sessionTags": {
       "label": "Oturum etiketleri",
@@ -313,7 +325,15 @@
         "postbackPlaceholder": "Tıklandığında gönderilen payload (bot akışını tetikler)",
         "postbackPreview": "Postback (ziyaretçi tıkladığında bot akışını / otomasyonu tetikler)"
       }
-    }
+    },
+    "createTicket": "Talebe dönüştür",
+    "transferFailed": "Aktarma başarısız oldu, lütfen tekrar deneyin",
+    "ticketFromSessionTitle": "Görüşme talebi: {{name}}",
+    "ticketCreated": "Talep oluşturuldu",
+    "ticketCreateFailed": "Talep oluşturulamadı, lütfen tekrar deneyin",
+    "viewTickets": "Talepleri görüntüle",
+    "sendFailed": "Mesaj gönderilemedi, lütfen tekrar deneyin",
+    "noteSaveFailed": "Dahili not kaydedilemedi, lütfen tekrar deneyin"
   },
   "panel": {
     "info": "Ziyaretçi",
@@ -343,7 +363,8 @@
     "enabled": "Etkin",
     "search": "Ara",
     "language": "Dil",
-    "exportCsv": "CSV dışa aktar"
+    "exportCsv": "CSV dışa aktar",
+    "copy": "Kopyala"
   },
   "layout": {
     "searchNoResults": "Eşleşen sonuç yok",
@@ -361,7 +382,8 @@
     "desktopNotification": "Masaüstü bildirimleri",
     "desktopNotificationToggle": "Masaüstü bildirimlerini aç/kapat",
     "unreadSummary": "{{sessions}} oturumda {{total}} okunmamış",
-    "noUnread": "Okunmamış mesaj yok"
+    "noUnread": "Okunmamış mesaj yok",
+    "primaryNav": "Ana gezinme"
   },
   "core": {
     "loginApiMode": "API: {{api}} · Mod: {{mode}}",
@@ -1928,7 +1950,8 @@
     "statusQueued": "Kuyrukta",
     "statusClosed": "Kapalı",
     "closedBadge": "Kapatıldı",
-    "reopen": "Yeniden aç"
+    "reopen": "Yeniden aç",
+    "visitorTypingPreview": "Ziyaretçi yazıyor: "
   },
   "fields": {
     "settings": {
@@ -1986,7 +2009,8 @@
     },
     "deleteConfirm": "Bu özel alan silinsin mi? Girilmiş değerler artık gösterilmez ancak mevcut talep verilerinde kalır.",
     "error": "İşlem başarısız, lütfen daha sonra tekrar deneyin",
-    "errorConflict": "Bu alan anahtarı zaten mevcut, lütfen başka birini seçin"
+    "errorConflict": "Bu alan anahtarı zaten mevcut, lütfen başka birini seçin",
+    "requiredMissing": "Lütfen önce zorunlu alanları doldurun"
   },
   "import": {
     "button": "İçe aktar",
@@ -2074,7 +2098,8 @@
     "noActions": "Henüz eylem eklenmedi",
     "actionCount": "eylem",
     "cancel": "İptal",
-    "close": "Kapat"
+    "close": "Kapat",
+    "actionIncomplete": "Bazı eylemlerde zorunlu alanlar doldurulmamış"
   },
   "aitools": {
     "introTitle": "AI araç çağırma",
@@ -2151,7 +2176,8 @@
     "role": {
       "collaborator": "İşbirlikçi",
       "watcher": "İzleyici"
-    }
+    },
+    "mentionNoteFailed": "@etiketleme notu gönderilemedi, lütfen tekrar deneyin"
   },
   "pagetrail": {
     "tab": "Gezinme izi",
@@ -2899,5 +2925,160 @@
       "weekly": "Haftalık",
       "monthly": "Aylık"
     }
+  },
+  "native": {
+    "notify": {
+      "channelName": "Mesaj bildirimleri",
+      "channelDesc": "Yeni mesaj, atama ve aktarma uyarıları",
+      "visitor": "Ziyaretçi"
+    },
+    "server": {
+      "title": "Sunucuya bağlan",
+      "subtitle": "Şirketinizin kefu sunucu adresini girin",
+      "urlLabel": "Sunucu adresi",
+      "connect": "Bağlan",
+      "connecting": "Bağlanıyor…",
+      "cancel": "İptal",
+      "errorEmpty": "Lütfen sunucu adresini girin",
+      "errorInvalid": "Adres biçimi geçersiz",
+      "errorHttps": "Uygulama yalnızca https:// sunuculara bağlanabilir",
+      "errorNotKefu": "Bu adres bir kefu sunucusu değil",
+      "errorOutdated": "Bu sunucu uygulamanın daha yeni bir sürümünü gerektiriyor, lütfen önce güncelleyin",
+      "errorUnreachable": "Sunucuya bağlanılamadı, lütfen adresi ve ağ bağlantınızı kontrol edin",
+      "switchTitle": "Sunucu değiştirilsin mi?",
+      "switchDesc": "Bağlantı, {{server}} sunucusuna geçilmesini istiyor. Geçiş yaptıktan sonra yeniden giriş yapmanız gerekir.",
+      "switchConfirm": "Kuruluma git",
+      "intro": "Şirketinizin kefu sunucu adresini girin. Emin değilseniz sistem yöneticinize sorun.",
+      "urlHint": "Yalnızca alan adını girmeniz yeterli, örn. kf.example.com (otomatik olarak https kullanılır).",
+      "fromLinkHint": "Bu adres bir kurulum bağlantısından geldi, devam etmeden önce lütfen doğrulayın.",
+      "test": "Bağlantıyı test et",
+      "continue": "Devam",
+      "back": "Değiştirmeden geri dön",
+      "appVersion": "Uygulama sürümü {{version}}",
+      "saveFailed": "Sunucu ayarı kaydedilemedi, lütfen tekrar deneyin",
+      "linkTitle": "Sunucu kurulum bağlantısı alındı",
+      "linkDesc": "Bağlantı aşağıdaki sunucunun kullanılmasını istiyor. Uygulamadan önce güvendiğiniz bir adres olduğundan emin olun.",
+      "linkApply": "Bu adresi kullan",
+      "linkIgnore": "Yok say",
+      "okTitle": "Bağlantı başarılı",
+      "okHost": "Sunucu",
+      "okVersion": "Sürüm",
+      "okFeatures": "Özellikler",
+      "okLegacy": "Sunucu kullanılabilir ancak sürüm bilgisi sağlamıyor (eski bir sürüm olabilir).",
+      "featurePassword": "Hesap ve parola ile giriş",
+      "featureGoogle": "Google ile giriş",
+      "featureSaml": "SAML SSO",
+      "featurePush": "Anlık bildirimler",
+      "errorEmptyDesc": "Lütfen şirketinizin kefu sunucu adresini girin.",
+      "errorInvalidDesc": "Lütfen https://kf.example.com gibi bir adres girin.",
+      "errorHttpsTitle": "https bağlantısı gerekli",
+      "errorNotKefuDesc": "Bu adres yanıt veriyor ancak bir kefu hizmeti değil. Adresin doğru olduğundan emin olun veya sistem yöneticinize sorun.",
+      "errorOfflineTitle": "Cihaz çevrimdışı",
+      "errorOfflineDesc": "Lütfen Wi-Fi veya mobil veri bağlantınızı kontrol edip tekrar deneyin.",
+      "errorTimeoutTitle": "Bağlantı zaman aşımına uğradı",
+      "errorTimeoutDesc": "Sunucu zamanında yanıt vermedi; ağ kararsız veya sunucu yoğun olabilir. Lütfen daha sonra tekrar deneyin.",
+      "errorDnsTitle": "Sunucu bulunamadı",
+      "errorDnsDesc": "Bu adres çözümlenemedi veya adrese ulaşılamadı. Lütfen yazımı ve ağ bağlantınızı kontrol edin ve sunucunun HTTPS sertifikasının geçerli olduğundan emin olun."
+    },
+    "login": {
+      "serverLabel": "Sunucu",
+      "serverUnknown": "Ayarlanmadı",
+      "changeServer": "Sunucuyu değiştir",
+      "changeServerTitle": "Sunucu değiştirilsin mi?",
+      "changeServerDesc": "Sunucu kurulum ekranına dönülecek. Başka bir sunucuya geçtikten sonra o sunucudaki hesabınızla yeniden giriş yapmanız gerekir.",
+      "changeServerConfirm": "Değiştir",
+      "invalidWithTenant": "E-posta, parola veya çalışma alanı kodu hatalı",
+      "openAuthenticator": "Kimlik doğrulayıcı uygulamada aç",
+      "samlLogin": "{{slug}} için SAML SSO ile giriş yap",
+      "tenantTitle": "Çalışma alanı seçin",
+      "tenantHint": "Bu hesap birden fazla çalışma alanına ait. Lütfen giriş yapmak istediğiniz çalışma alanını seçin.",
+      "tenantRequired": "Bu hesap birden fazla çalışma alanına ait. Lütfen \"Çalışma alanı (gelişmiş)\" bölümüne çalışma alanı kodunu girin",
+      "workspaceToggle": "Çalışma alanı (gelişmiş)",
+      "workspaceLabel": "Çalışma alanı kodu",
+      "workspacePlaceholder": "örn. acme",
+      "workspaceHint": "Aynı hesap birden fazla çalışma alanına aitse doldurun; aksi halde boş bırakabilirsiniz.",
+      "workspaceHintSaml": "Aynı hesap birden fazla çalışma alanına aitse veya SAML SSO kullanacaksanız doldurun; aksi halde boş bırakabilirsiniz.",
+      "sso": {
+        "waiting": "Giriş sayfası tarayıcıda açıldı. İşlem tamamlanınca otomatik olarak uygulamaya dönülecek.",
+        "completing": "Giriş tamamlanıyor…",
+        "errOpenBrowser": "Sistem tarayıcısı açılamadı, lütfen tekrar deneyin",
+        "errSamlDisabled": "Bu çalışma alanında SAML SSO henüz etkin değil, lütfen yöneticinizle iletişime geçin",
+        "errNotInvited": "Bu hesap çalışma alanına davet edilmemiş, lütfen yöneticinizle iletişime geçin",
+        "errUnavailable": "Tekli oturum açma hizmeti geçici olarak kullanılamıyor, lütfen daha sonra tekrar deneyin",
+        "errInvalidRequest": "Giriş isteği geçersiz, lütfen uygulamayı güncelleyip tekrar deneyin",
+        "errExpired": "Giriş oturumunun süresi doldu, lütfen yeniden giriş yapın",
+        "errVerify": "Giriş doğrulanamadı, lütfen yeniden giriş yapın",
+        "errIpBlocked": "Mevcut ağ adresiniz girişe izin verilen listede değil, lütfen yöneticinizle iletişime geçin",
+        "err2faEnroll": "Kuruluşunuz iki adımlı doğrulama gerektiriyor, kurulumu tamamlamak için lütfen hesap ve parolayla giriş yapın",
+        "errSuspended": "Bu çalışma alanı devre dışı bırakıldı, lütfen yöneticinizle iletişime geçin",
+        "errRateLimited": "Çok fazla deneme yapıldı, lütfen daha sonra tekrar deneyin",
+        "errNetwork": "Sunucuya bağlanılamadı, lütfen ağ bağlantınızı kontrol edip tekrar deneyin",
+        "errSamlFailed": "SAML SSO girişi başarısız oldu, lütfen tekrar deneyin"
+      }
+    },
+    "update": {
+      "title": "Lütfen uygulamayı güncelleyin",
+      "desc": "Bu sunucu {{min}} veya üzeri bir sürüm öneriyor (mevcut sürüm {{current}}). Bazı özellikler düzgün çalışmayabilir.",
+      "dismiss": "Şimdi değil"
+    }
+  },
+  "mobile": {
+    "composer": {
+      "placeholder": "Bir mesaj yazın… (hazır yanıtlar için /)",
+      "more": "Diğer araçlar",
+      "closePanel": "Paneli kapat",
+      "enhanceNeedsText": "Lütfen önce içerik girin",
+      "cannedEmpty": "Henüz kullanılabilir hazır yanıt yok",
+      "loading": "Yükleniyor…"
+    },
+    "message": {
+      "actions": "Mesaj işlemleri"
+    },
+    "tabBar": "Ana sekmeler",
+    "tab": {
+      "visitors": "Ziyaretçiler",
+      "more": "Daha fazla",
+      "unreadLabel": "{{label}}, {{count}} okunmamış"
+    },
+    "openMenu": "Menüyü aç",
+    "secondaryNav": "Alt menü",
+    "secondaryPickerDesc": "Gitmek istediğiniz öğeyi seçin",
+    "group": {
+      "account": "Hesap",
+      "team": "Ekip",
+      "conversation": "Görüşmeler",
+      "ai": "AI",
+      "channels": "Kanallar",
+      "advanced": "Gelişmiş"
+    },
+    "search": {
+      "hint": "Görüşme, mesaj ve kişi aramak için anahtar kelime girin"
+    },
+    "drawer": {
+      "desc": "Gezinme, temsilci durumu ve hesap ayarları",
+      "darkMode": "Koyu mod",
+      "version": "Sürüm {{version}}",
+      "toggleSub": "{{label}} alt menüsünü genişlet"
+    },
+    "context": {
+      "title": "Ziyaretçi bilgileri ve araçlar"
+    },
+    "conv": {
+      "back": "Görüşme listesine dön",
+      "moreActions": "Diğer işlemler",
+      "backToActions": "Geri",
+      "snoozedNotice": "{{duration}} ertelendi",
+      "unsnoozedNotice": "Erteleme iptal edildi",
+      "snoozeFailed": "Ertelenemedi, lütfen tekrar deneyin"
+    },
+    "workspace": {
+      "backToList": "Görüşme listesine dön"
+    }
+  },
+  "conn": {
+    "connected": "Bağlandı",
+    "connecting": "Bağlanıyor…",
+    "reconnecting": "Yeniden bağlanıyor…",
+    "mock": "Simüle gerçek zamanlı"
   }
 }

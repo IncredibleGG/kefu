@@ -1,0 +1,17 @@
+{
+  "$comment": "品牌唯一來源。桌面(Tauri)與手機(Capacitor)的名稱、App ID、主色、預設伺服器都從這裡讀。日後做每租戶貼牌:換掉此檔 + 同資料夾的 SVG 圖示即可重打包。appId 在第一次送審 App Store / Play 之前都能改,上架後不可改。",
+  "name": "kefu",
+  "productName": "kefu",
+  "displayName": {
+    "zh-Hant": "kefu 坐席台",
+    "zh-CN": "kefu 坐席台",
+    "en": "kefu Agent"
+  },
+  "appId": "cc.kf56k.kefu",
+  "urlScheme": "kefu",
+  "primaryColor": "#7c5cff",
+  "backgroundColor": "#ffffff",
+  "backgroundColorDark": "#0f0f14",
+  "defaultServer": "https://kf.56k.cc",
+  "version": "0.1.0"
+}

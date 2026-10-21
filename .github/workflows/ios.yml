@@ -1,0 +1,186 @@
+# iOS(Capacitor 8,SPM 專案,沒有 workspace):
+#   kefu-ios-simulator.zip   模擬器版 App.app(給 Xcode 模擬器)
+#   kefu-ios-unsigned.ipa    實機版、不簽章(給 Sideloadly / AltStore 用自己的 Apple ID 重新簽章)
+# repo 是公開的(標準 runner 免費),所以純前端改動也會觸發。
+name: ios
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '!frontend/src-tauri/**'
+      - '!frontend/android/**'
+      - 'clients/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  XCODE_APP: /Applications/Xcode_26.6.app
+
+jobs:
+  build:
+    name: build (simulator + unsigned ipa)
+    runs-on: macos-latest            # macOS 26 arm64
+    timeout-minutes: 50
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # 建置號取 git commit 數,需要完整歷史
+
+      - name: 選擇 Xcode 26.6
+        run: |
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "::error::找不到 $XCODE_APP,runner 上可用的 Xcode:"; ls -d /Applications/Xcode*.app; exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP"
+          xcodebuild -version
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: 注入品牌與版本
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 建置號 = commit 數:同一 commit 在各 workflow 一致且單調遞增,
+          # 避免 run_number 各自計數造成 Android versionCode 倒退而無法覆蓋安裝
+          args=(--build "$(git rev-list --count HEAD)")
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            v="${GITHUB_REF_NAME#v}"
+            v="${v%%[-+]*}"
+            args+=(--version "$v")
+          fi
+          node clients/scripts/sync-brand.mjs "${args[@]}"
+
+      - run: npm run build:native
+
+      - run: npx cap sync ios        # 重新產生 CapApp-SPM/Package.swift(指向 node_modules)
+
+      - uses: actions/cache@v6
+        with:
+          path: frontend/ios/App/build/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('frontend/ios/App/CapApp-SPM/Package.swift', 'frontend/package-lock.json') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: 模擬器版 .app
+        working-directory: frontend/ios/App
+        run: |
+          set -euo pipefail
+          xcodebuild -quiet -project App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build -clonedSourcePackagesDirPath build/SourcePackages \
+            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO build
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/Build/Products/Debug-iphonesimulator/App.app "$GITHUB_WORKSPACE/kefu-ios-simulator.zip"
+
+      - name: 實機版、不簽章 .ipa
+        working-directory: frontend/ios/App
+        run: |
+          set -euo pipefail
+          xcodebuild -quiet -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build -clonedSourcePackagesDirPath build/SourcePackages \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          rm -rf Payload && mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry "$GITHUB_WORKSPACE/kefu-ios-unsigned.ipa" Payload
+          rm -rf Payload
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: kefu-ios-simulator.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: kefu-ios-unsigned.ipa
+          archive: false
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------- 冒煙測試:模擬器安裝、啟動、截圖(暫不擋流程) ----------
+
+  smoke-ios:
+    name: smoke (ios simulator)
+    needs: build
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - name: 選擇 Xcode 26.6
+        run: |
+          if [ -d "$XCODE_APP" ]; then sudo xcode-select -s "$XCODE_APP"; fi
+          xcodebuild -version
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: kefu-ios-simulator.zip
+          path: pkg
+          skip-decompress: true        # 自己用 ditto 解,保留執行權限
+
+      - name: 開模擬器、安裝、啟動、截圖
+        shell: bash
+        run: |
+          set -euxo pipefail
+          out="$GITHUB_WORKSPACE/smoke"; mkdir -p "$out" app
+          ditto -x -k pkg/kefu-ios-simulator.zip app
+          app_path="app/App.app"
+          bundle_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist" || echo cc.kf56k.kefu)
+          if [ "$bundle_id" != "cc.kf56k.kefu" ]; then echo "::warning::bundle id 是 $bundle_id,不是 cc.kf56k.kefu"; fi
+          # 挑最新 iOS runtime 裡第一台可用的 iPhone
+          udid=$(xcrun simctl list devices available --json | python3 -c '
+          import json, re, sys
+          best = None
+          for rt, devs in json.load(sys.stdin)["devices"].items():
+              m = re.search(r"iOS-(\d+)-(\d+)", rt)
+              if not m:
+                  continue
+              ver = (int(m.group(1)), int(m.group(2)))
+              phones = [d for d in devs if d.get("isAvailable") and d["name"].startswith("iPhone")]
+              if phones and (best is None or ver > best[0]):
+                  best = (ver, phones[0]["udid"], phones[0]["name"])
+          if best:
+              print(best[1])
+              print("simulator: %s (iOS %d.%d)" % (best[2], best[0][0], best[0][1]), file=sys.stderr)
+          ')
+          test -n "$udid"
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" "$app_path"
+          xcrun simctl launch --terminate-running-process \
+            --stdout="$out/stdout.log" --stderr="$out/stderr.log" "$udid" "$bundle_id" | tee "$out/launch.txt"
+          sleep 20
+          xcrun simctl io booted screenshot "$out/ios.png"
+          xcrun simctl spawn "$udid" log show --last 3m --style compact --predicate 'process == "App"' > "$out/system.log" 2>&1 || true
+          xcrun simctl spawn "$udid" launchctl list | grep -i "$bundle_id" > "$out/process.txt" || { echo "App 行程不存在(可能已閃退)" | tee "$out/process.txt"; exit 1; }
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-ios
+          path: smoke/
+          if-no-files-found: warn
+          retention-days: 14

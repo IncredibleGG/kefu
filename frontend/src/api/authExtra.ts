@@ -9,7 +9,7 @@
  *    - POST /2fa/setup|enable|disable  2FA 設定
  *  一律走 {ok,data,error} 信封(apiFetch 已解包 data);公開端點以 auth:false 不帶 Bearer。 */
 import { apiFetch, ApiError } from "./client";
-import { STORAGE_KEYS } from "@/lib/config";
+import { setToken } from "@/lib/server";
 import { useAuth } from "@/stores/auth";
 
 /* ------------------------------ 登入(含 2FA) ------------------------------ */
@@ -81,11 +81,8 @@ export function enrollVerify2fa(arg: { challenge: string; code: string }): Promi
  */
 export async function finalizeSession(res: LoginAttemptResult): Promise<void> {
   if (!res.access_token) throw new ApiError("NO_TOKEN", "登入回應缺少 token");
-  try {
-    localStorage.setItem(STORAGE_KEYS.token, res.access_token);
-  } catch {
-    /* localStorage 不可用時仍以記憶體 state 運作 */
-  }
+  // token 單一來源:lib/server(localStorage 鏡像 + 原生持久儲存;localStorage 不可用時仍以記憶體 state 運作)
+  setToken(res.access_token);
   useAuth.setState({
     token: res.access_token,
     isPlatformAdmin: Boolean(res.is_platform_admin),

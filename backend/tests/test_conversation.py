@@ -119,9 +119,11 @@ def test_ws_agent_rejects_bad_token():
     from starlette.websockets import WebSocketDisconnect
 
     client = TestClient(_build_ws_app())
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect("/ws/agent?token=not-a-jwt"):
-            pass
+    # 認證失敗改為「先 accept 再 close(4401)」,客戶端才看得到原因
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with client.websocket_connect("/ws/agent?token=not-a-jwt") as ws:
+            ws.receive_text()
+    assert exc_info.value.code == 4401
 
 
 # ============================ 需要資料庫:整合測試 ============================

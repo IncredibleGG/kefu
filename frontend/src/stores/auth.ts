@@ -4,6 +4,19 @@ import { STORAGE_KEYS } from "@/lib/config";
 import type { Staff } from "@/types";
 import { authApi } from "@/api/endpoints";
 import { setUnauthorizedHandler } from "@/api/client";
+import { agentSocket } from "@/api/realtime";
+import { queryClient } from "@/lib/query";
+import { apiUrl, clearToken, getToken, registerServerSwitchHooks, setToken } from "@/lib/server";
+import { getDeviceId, setBadge } from "@/lib/platform";
+import { useNotify } from "@/stores/notify";
+
+/** 撤銷推播裝置的逾時(登出不可被網路卡住)。 */
+const DEVICE_REVOKE_TIMEOUT_MS = 3000;
+
+interface LogoutOptions {
+  /** 是否先向後端撤銷本裝置推播登記(預設 true;401 觸發的登出 token 已失效,略過)。 */
+  revokeDevice?: boolean;
+}
 
 interface AuthState {
   token: string | null;
@@ -15,13 +28,54 @@ interface AuthState {
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
   loadMe: () => Promise<void>;
-  logout: () => void;
+  /** 登出:本地狀態同步清除(呼叫端可立即導向 /login);回傳的 Promise 在裝置撤銷請求結束後 resolve。 */
+  logout: (opts?: LogoutOptions) => Promise<void>;
 }
+
+/* --------------------------- 推播裝置登記標記 --------------------------- */
+/** usePushRegistration 成功 POST /devices 後呼叫;登出時據此撤銷。 */
+export function markDeviceRegistered(): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.deviceRegistered, "1");
+  } catch {
+    /* 忽略 */
+  }
+}
+
+function takeDeviceRegistered(): boolean {
+  try {
+    const v = localStorage.getItem(STORAGE_KEYS.deviceRegistered) === "1";
+    localStorage.removeItem(STORAGE_KEYS.deviceRegistered);
+    return v;
+  } catch {
+    return false;
+  }
+}
+
+/** DELETE /api/v1/devices/{device_id}(盡力而為、短逾時;用原生 fetch 避免 401 再觸發登出)。 */
+async function revokeDevice(token: string): Promise<void> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), DEVICE_REVOKE_TIMEOUT_MS);
+  try {
+    await fetch(apiUrl(`/api/v1/devices/${encodeURIComponent(getDeviceId())}`), {
+      method: "DELETE",
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      signal: ctrl.signal,
+    });
+  } catch {
+    /* 忽略:裝置之後會因 token 失效 / 重新登記而被覆蓋 */
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+let loggingOut = false;
 
 export const useAuth = create<AuthState>()(
   persist(
     (set, get) => ({
-      token: null,
+      // token 的事實來源是 lib/server(kefu-token + 原生儲存);store 只保留同步副本供路由守衛訂閱
+      token: getToken(),
       staff: null,
       isPlatformAdmin: false,
       status: "idle",
@@ -31,8 +85,8 @@ export const useAuth = create<AuthState>()(
         set({ status: "loading", error: null });
         try {
           const res = await authApi.login(email, password);
-          // token 同步寫入 localStorage(供 api client 讀取)
-          localStorage.setItem(STORAGE_KEYS.token, res.access_token);
+          // token 寫入 lib/server(localStorage + 原生儲存,供 api client / WS 讀取)
+          setToken(res.access_token);
           // is_platform_admin 僅登入回應帶回;記住並持久化(/me 不含此欄位)
           set({ token: res.access_token, isPlatformAdmin: Boolean(res.is_platform_admin) });
           await get().loadMe();
@@ -48,19 +102,64 @@ export const useAuth = create<AuthState>()(
         set({ staff: me });
       },
 
-      logout() {
-        localStorage.removeItem(STORAGE_KEYS.token);
-        set({ token: null, staff: null, isPlatformAdmin: false, status: "idle", error: null });
+      logout(opts = {}) {
+        if (loggingOut) return Promise.resolve();
+        loggingOut = true;
+        try {
+          const token = getToken();
+          const registered = takeDeviceRegistered();
+          // 先送出撤銷請求(帶目前 token),再清 token;本地狀態同步清除,不等網路
+          const revoke =
+            opts.revokeDevice !== false && registered && token ? revokeDevice(token) : Promise.resolve();
+          clearToken();
+          set({ token: null, staff: null, isPlatformAdmin: false, status: "idle", error: null });
+          // 清掉上一位使用者的未讀、快取、角標與即時連線
+          useNotify.setState({ unread: {}, activeSessionId: null });
+          agentSocket.disconnect();
+          queryClient.clear();
+          void setBadge(0);
+          return revoke;
+        } finally {
+          loggingOut = false;
+        }
       },
     }),
     {
       name: STORAGE_KEYS.auth,
-      partialize: (s) => ({ token: s.token, staff: s.staff, isPlatformAdmin: s.isPlatformAdmin }),
+      // token 不再寫進 kefu-auth(單一來源在 lib/server);還原時一律以 getToken() 為準
+      partialize: (s) => ({ staff: s.staff, isPlatformAdmin: s.isPlatformAdmin }),
+      merge: (persisted, current) => ({
+        ...current,
+        ...((persisted as Partial<AuthState> | undefined) ?? {}),
+        token: getToken(),
+      }),
     },
   ),
 );
 
-// api client 401 → 自動登出(觸發路由守衛導回 /login)
+/**
+ * initPlatform() 把原生儲存的 token 讀回 localStorage 之後呼叫:讓 store 與 lib/server 的 token 一致
+ * (store 建立時原生值可能尚未載入)。token 不一致時以 lib/server 為準。
+ */
+export function syncAuthToken(): void {
+  const t = getToken();
+  const s = useAuth.getState();
+  if (s.token === t) return;
+  useAuth.setState(t ? { token: t } : { token: null, staff: null, isPlatformAdmin: false });
+}
+
+// 換伺服器(lib/server.setServerBase):舊伺服器上登出 → 清空登入狀態 / 快取 / 即時連線
+registerServerSwitchHooks({
+  logout: () => useAuth.getState().logout(),
+  reset: () => {
+    useAuth.setState({ token: null, staff: null, isPlatformAdmin: false, status: "idle", error: null });
+    useNotify.setState({ unread: {}, activeSessionId: null });
+    queryClient.clear();
+    agentSocket.disconnect();
+  },
+});
+
+// api client 401 → 自動登出(觸發路由守衛導回 /login);token 已失效,不必撤銷裝置
 setUnauthorizedHandler(() => {
-  useAuth.getState().logout();
+  void useAuth.getState().logout({ revokeDevice: false });
 });

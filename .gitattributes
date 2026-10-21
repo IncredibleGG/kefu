@@ -1,0 +1,63 @@
+# 預設:文字檔一律以 LF 存入與檢出(Windows runner / 開發機也一樣,避免 sh\r、腳本 regex 對不上)
+* text=auto eol=lf
+
+# 必須是 LF 的腳本(CRLF 會造成 "/usr/bin/env: 'sh\r'" 錯誤)
+gradlew text eol=lf
+*.sh text eol=lf
+*.bash text eol=lf
+*.mjs text eol=lf
+
+# Windows 專用腳本維持 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+gradlew.bat text eol=crlf
+
+# Xcode 專案檔:LF
+*.pbxproj text eol=lf
+
+# 二進位檔:不做換行轉換、不 diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.bmp binary
+*.tif binary
+*.tiff binary
+*.car binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+*.mp3 binary
+*.mp4 binary
+*.mov binary
+*.wav binary
+*.ogg binary
+*.webm binary
+*.zip binary
+*.gz binary
+*.tgz binary
+*.7z binary
+*.jar binary
+*.aar binary
+*.apk binary
+*.aab binary
+*.ipa binary
+*.dmg binary
+*.msi binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.keystore binary
+*.jks binary
+*.p12 binary
+*.der binary
+*.sqlite binary
+*.db binary
+*.onnx binary

@@ -23,6 +23,7 @@ import { useChannels, qk } from "@/api/hooks";
 import { channelApi } from "@/api/endpoints";
 import { channelMeta } from "@/lib/channels";
 import { apiOrigin, CopyField } from "./advanced/shared";
+import { getServerOrigin, publicUrl } from "@/lib/server";
 import type { ChannelType } from "@/types";
 
 // 本頁可直接建立的渠道型別(email 於「Email 渠道」頁、WhatsApp/Facebook 於 Meta 頁另有專屬流程)
@@ -71,11 +72,12 @@ export function ChannelsPage() {
   const selectedWeb = webChannels.find((c) => c.id === selectedWebId);
   // web 渠道的 public_key(adapters.mapChannel 對 web 型別不遮罩,提供完整值);即 channelKey。
   const channelKey = selectedWeb?.meta?.public_key ?? "";
-  // widget 前端資源(embed.js)預設同源於目前管理台網域;專案目前無專屬 widget host 設定
-  // (config.ts 僅有 apiBase)。若 widget 由獨立 CDN / 子網域提供,把下方 host 換成該來源即可。
-  const widgetHost = typeof window !== "undefined" ? window.location.origin : "";
+  // widget 前端資源(embed.js)由伺服器(nginx 反代)提供:web 同源部署即目前管理台網域,
+  // 原生殼為使用者設定的伺服器。若 widget 由獨立 CDN / 子網域提供,把下方網址換成該來源即可。
+  const embedSrc = publicUrl("/embed.js");
+  const widgetHost = getServerOrigin();
   const embedSnippet = channelKey
-    ? `<script src="${widgetHost}/embed.js" data-channel-key="${channelKey}"></script>`
+    ? `<script src="${embedSrc}" data-channel-key="${channelKey}"></script>`
     : "";
 
   function openAdd(type: ChannelType) {

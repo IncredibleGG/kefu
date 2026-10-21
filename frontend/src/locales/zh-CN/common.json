@@ -15,7 +15,8 @@
     "desktopNotification": "桌面通知",
     "desktopNotificationToggle": "桌面通知开关",
     "unreadSummary": "当前有 {{total}} 条未读,分布在 {{sessions}} 个会话",
-    "noUnread": "当前没有未读消息"
+    "noUnread": "当前没有未读消息",
+    "primaryNav": "主导航"
   },
   "workspace": {
     "loading": "加载中…",
@@ -85,7 +86,8 @@
       "read": "已读",
       "delivered": "已送达",
       "translatedTag": "译",
-      "imageAlt": "图片"
+      "imageAlt": "图片",
+      "copy": "复制"
     },
     "composer": {
       "cannedHint": "快捷语 · 输入 / 后接短码",
@@ -115,7 +117,15 @@
       "notePlaceholder": "本次服务摘要、后续待办…",
       "csatLabel": "满意度",
       "starLabel": "{{n}} 星",
-      "submit": "结束并存档"
+      "submit": "结束并存档",
+      "closeFailed": "结束会话失败,请重试",
+      "saveFailed": "服务小结保存失败,请重试",
+      "descriptionNoteOnly": "仅记录本次服务小结,不会结束会话。",
+      "internalRatingLabel": "内部处理评级(选填)",
+      "clearRating": "清除",
+      "internalRatingHint": "仅供内部质量参考,与访客满意度(CSAT)分开;未评分则不提交,也不会覆盖或计入访客评分。",
+      "submitting": "处理中…",
+      "saveOnly": "保存服务小结"
     },
     "sessionTags": {
       "label": "会话标签",
@@ -209,7 +219,15 @@
         "postbackPlaceholder": "点击后发送的 payload(触发 bot 流程)",
         "postbackPreview": "Postback(访客点击后触发 bot 流程 / 自动化)"
       }
-    }
+    },
+    "createTicket": "升级为工单",
+    "transferFailed": "转接失败,请重试",
+    "ticketFromSessionTitle": "会话工单:{{name}}",
+    "ticketCreated": "已创建工单",
+    "ticketCreateFailed": "创建工单失败,请重试",
+    "viewTickets": "查看工单",
+    "sendFailed": "消息发送失败,请重试",
+    "noteSaveFailed": "内部备注保存失败,请重试"
   },
   "core": {
     "loginApiMode": "API:{{api}} · 模式:{{mode}}",
@@ -1026,7 +1044,8 @@
     "save": "保存",
     "search": "搜索",
     "language": "语言",
-    "exportCsv": "导出 CSV"
+    "exportCsv": "导出 CSV",
+    "copy": "复制"
   },
   "login": {
     "demoHint": "后端未启动时可用任意账号密码以 mock 模式进入",
@@ -1152,7 +1171,10 @@
     "away": "离开",
     "busy": "忙碌",
     "offline": "离线",
-    "online": "在线"
+    "online": "在线",
+    "syncNoStaff": "无法获取坐席身份,状态未同步",
+    "syncFailed": "状态切换失败,请重试",
+    "syncErrorShort": "状态未同步"
   },
   "topbar": {
     "account": "账号",
@@ -1321,7 +1343,8 @@
     },
     "emptyValue": "—",
     "deleteConfirm": "确定删除此自定义字段?已填入的值将不再显示,但仍保留于现有工单数据中。",
-    "selectPlaceholder": "请选择"
+    "selectPlaceholder": "请选择",
+    "requiredMissing": "请先填写必填字段"
   },
   "routing": {
     "queue": {
@@ -1634,7 +1657,8 @@
     "removeParticipant": "移除",
     "threadPlaceholder": "回复讨论,用 @ 提及同事…",
     "untitled": "未命名讨论",
-    "searchStaff": "搜索坐席以加入…"
+    "searchStaff": "搜索坐席以加入…",
+    "mentionNoteFailed": "@提及备注发送失败,请重试"
   },
   "reports": {
     "colLevel": "等级",
@@ -1870,7 +1894,8 @@
     "cancel": "取消",
     "tags": "标签",
     "close": "关闭",
-    "actions": "动作序列"
+    "actions": "动作序列",
+    "actionIncomplete": "有动作尚未填写完必填字段"
   },
   "knowledge": {
     "manage": {
@@ -2410,7 +2435,8 @@
     "statusQueued": "排队中",
     "statusClosed": "已结束",
     "closedBadge": "已结束",
-    "reopen": "重新打开"
+    "reopen": "重新打开",
+    "visitorTypingPreview": "访客正在输入:"
   },
   "pagetrail": {
     "error": "加载浏览轨迹失败",
@@ -2899,5 +2925,160 @@
       "weekly": "每周",
       "monthly": "每月"
     }
+  },
+  "native": {
+    "notify": {
+      "channelName": "消息通知",
+      "channelDesc": "新消息、指派与转接提醒",
+      "visitor": "访客"
+    },
+    "server": {
+      "title": "连接到服务器",
+      "subtitle": "输入你公司的 kefu 服务器网址",
+      "urlLabel": "服务器网址",
+      "connect": "连接",
+      "connecting": "连接中…",
+      "cancel": "取消",
+      "errorEmpty": "请输入服务器网址",
+      "errorInvalid": "网址格式不正确",
+      "errorHttps": "App 只能连接 https:// 服务器",
+      "errorNotKefu": "这个网址不是 kefu 服务器",
+      "errorOutdated": "此服务器需要较新版本的 App,请先更新",
+      "errorUnreachable": "无法连接到服务器,请检查网址与网络",
+      "switchTitle": "切换服务器?",
+      "switchDesc": "链接要求改为连接到 {{server}}。切换后需要重新登录。",
+      "switchConfirm": "前往设置",
+      "intro": "输入贵公司 kefu 服务器的网址。不确定网址时,请询问系统管理员。",
+      "urlHint": "只需填写域名,例如 kf.example.com(会自动使用 https)。",
+      "fromLinkHint": "此网址来自设置链接,请确认后再继续。",
+      "test": "测试连接",
+      "continue": "继续",
+      "back": "返回,不更换",
+      "appVersion": "App 版本 {{version}}",
+      "saveFailed": "无法保存服务器设置,请重试",
+      "linkTitle": "收到服务器设置链接",
+      "linkDesc": "链接要求改用以下服务器。请确认是你信任的网址再应用。",
+      "linkApply": "使用此网址",
+      "linkIgnore": "忽略",
+      "okTitle": "连接成功",
+      "okHost": "服务器",
+      "okVersion": "版本",
+      "okFeatures": "功能",
+      "okLegacy": "服务器可用,但未提供版本信息(可能是较旧的版本)。",
+      "featurePassword": "账号密码登录",
+      "featureGoogle": "Google 登录",
+      "featureSaml": "SAML 单点登录",
+      "featurePush": "推送通知",
+      "errorEmptyDesc": "请填写贵公司 kefu 服务器的网址。",
+      "errorInvalidDesc": "请输入类似 https://kf.example.com 的网址。",
+      "errorHttpsTitle": "需要 https 连接",
+      "errorNotKefuDesc": "这个网址有响应,但不是 kefu 服务。请确认网址是否正确,或询问系统管理员。",
+      "errorOfflineTitle": "设备当前离线",
+      "errorOfflineDesc": "请检查 Wi-Fi 或移动网络后再试一次。",
+      "errorTimeoutTitle": "连接超时",
+      "errorTimeoutDesc": "服务器未在规定时间内响应,可能是网络不稳定或服务器繁忙,请稍后再试。",
+      "errorDnsTitle": "找不到服务器",
+      "errorDnsDesc": "无法解析或连接这个网址。请确认拼写与网络连接,并确认服务器的 HTTPS 证书有效。"
+    },
+    "login": {
+      "serverLabel": "服务器",
+      "serverUnknown": "未设置",
+      "changeServer": "更换服务器",
+      "changeServerTitle": "更换服务器?",
+      "changeServerDesc": "将返回服务器设置页面。改连其他服务器后,需要用该服务器的账号重新登录。",
+      "changeServerConfirm": "更换",
+      "invalidWithTenant": "电子邮件、密码或工作区代号不正确",
+      "openAuthenticator": "在验证器 App 中打开",
+      "samlLogin": "以 SAML 单点登录 {{slug}}",
+      "tenantTitle": "选择工作区",
+      "tenantHint": "这个账号属于多个工作区,请选择要登录的工作区。",
+      "tenantRequired": "这个账号属于多个工作区,请在「工作区(高级)」填写工作区代号",
+      "workspaceToggle": "工作区(高级)",
+      "workspaceLabel": "工作区代号",
+      "workspacePlaceholder": "例如 acme",
+      "workspaceHint": "同一账号属于多个工作区时填写;其余情况可留空。",
+      "workspaceHintSaml": "同一账号属于多个工作区,或要使用 SAML 单点登录时填写;其余情况可留空。",
+      "sso": {
+        "waiting": "已在浏览器打开登录页面,完成后会自动返回 App。",
+        "completing": "正在完成登录…",
+        "errOpenBrowser": "无法打开系统浏览器,请重试",
+        "errSamlDisabled": "此工作区尚未启用 SAML 单点登录,请联系管理员",
+        "errNotInvited": "此账号未被邀请加入工作区,请联系管理员",
+        "errUnavailable": "单点登录服务暂时无法使用,请稍后再试",
+        "errInvalidRequest": "登录请求无效,请更新 App 后再试",
+        "errExpired": "登录会话已超时,请重新登录",
+        "errVerify": "登录验证失败,请重新登录",
+        "errIpBlocked": "当前的网络地址不在允许登录的名单内,请联系管理员",
+        "err2faEnroll": "组织要求两步验证,请改用账号密码登录完成设置",
+        "errSuspended": "此工作区已停用,请联系管理员",
+        "errRateLimited": "尝试次数过多,请稍后再试",
+        "errNetwork": "无法连接到服务器,请检查网络后再试",
+        "errSamlFailed": "SAML 单点登录失败,请重试"
+      }
+    },
+    "update": {
+      "title": "请更新 App",
+      "desc": "此服务器建议使用 {{min}} 及以上版本(当前为 {{current}}),部分功能可能无法正常运行。",
+      "dismiss": "暂不"
+    }
+  },
+  "mobile": {
+    "composer": {
+      "placeholder": "输入消息…(/ 调用快捷语)",
+      "more": "更多工具",
+      "closePanel": "关闭面板",
+      "enhanceNeedsText": "请先输入内容",
+      "cannedEmpty": "暂无可用的快捷语",
+      "loading": "加载中…"
+    },
+    "message": {
+      "actions": "消息操作"
+    },
+    "tabBar": "主要标签页",
+    "tab": {
+      "visitors": "访客",
+      "more": "更多",
+      "unreadLabel": "{{label}},{{count}} 条未读"
+    },
+    "openMenu": "打开菜单",
+    "secondaryNav": "子菜单",
+    "secondaryPickerDesc": "选择要前往的项目",
+    "group": {
+      "account": "账号",
+      "team": "团队",
+      "conversation": "对话",
+      "ai": "AI",
+      "channels": "渠道",
+      "advanced": "高级"
+    },
+    "search": {
+      "hint": "输入关键词搜索会话、消息与联系人"
+    },
+    "drawer": {
+      "desc": "导航、坐席状态与账号设置",
+      "darkMode": "深色模式",
+      "version": "版本 {{version}}",
+      "toggleSub": "展开 {{label}} 子菜单"
+    },
+    "context": {
+      "title": "访客信息与工具"
+    },
+    "conv": {
+      "back": "返回会话列表",
+      "moreActions": "更多操作",
+      "backToActions": "返回",
+      "snoozedNotice": "已延后 {{duration}}",
+      "unsnoozedNotice": "已取消延后",
+      "snoozeFailed": "延后失败,请重试"
+    },
+    "workspace": {
+      "backToList": "返回会话列表"
+    }
+  },
+  "conn": {
+    "connected": "已连接",
+    "connecting": "连接中…",
+    "reconnecting": "重新连接中…",
+    "mock": "模拟实时"
   }
 }

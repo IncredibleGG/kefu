@@ -93,7 +93,10 @@
     "online": "在線",
     "busy": "忙碌",
     "away": "離開",
-    "offline": "離線"
+    "offline": "離線",
+    "syncNoStaff": "無法取得坐席身分,狀態未同步",
+    "syncFailed": "狀態切換失敗,請重試",
+    "syncErrorShort": "狀態未同步"
   },
   "login": {
     "title": "登入坐席工作台",
@@ -216,7 +219,8 @@
       "read": "已讀",
       "delivered": "已送達",
       "translatedTag": "譯",
-      "imageAlt": "圖片"
+      "imageAlt": "圖片",
+      "copy": "複製"
     },
     "composer": {
       "cannedHint": "快捷語 · 輸入 / 後接短碼",
@@ -246,7 +250,15 @@
       "notePlaceholder": "本次服務摘要、後續待辦…",
       "csatLabel": "滿意度",
       "starLabel": "{{n}} 星",
-      "submit": "結束並存檔"
+      "submit": "結束並存檔",
+      "closeFailed": "結束會話失敗,請重試",
+      "saveFailed": "服務小結儲存失敗,請重試",
+      "descriptionNoteOnly": "僅記錄本次服務小結,不會結束會話。",
+      "internalRatingLabel": "內部處理評級(選填)",
+      "clearRating": "清除",
+      "internalRatingHint": "僅供內部品質參考,與訪客滿意度(CSAT)分開;未評分不送出,亦不會覆蓋或計入訪客評分。",
+      "submitting": "處理中…",
+      "saveOnly": "儲存服務小結"
     },
     "sessionTags": {
       "label": "會話標籤",
@@ -313,7 +325,15 @@
         "postbackPlaceholder": "點擊後送出的 payload(觸發 bot 流程)",
         "postbackPreview": "Postback(訪客點擊後觸發 bot 流程 / 自動化)"
       }
-    }
+    },
+    "createTicket": "升級為工單",
+    "transferFailed": "轉接失敗,請重試",
+    "ticketFromSessionTitle": "會話工單:{{name}}",
+    "ticketCreated": "已建立工單",
+    "ticketCreateFailed": "建立工單失敗,請重試",
+    "viewTickets": "查看工單",
+    "sendFailed": "訊息送出失敗,請重試",
+    "noteSaveFailed": "內部備註儲存失敗,請重試"
   },
   "panel": {
     "info": "訪客資訊",
@@ -343,7 +363,8 @@
     "enabled": "已啟用",
     "search": "搜尋",
     "language": "語言",
-    "exportCsv": "匯出 CSV"
+    "exportCsv": "匯出 CSV",
+    "copy": "複製"
   },
   "layout": {
     "searchNoResults": "找不到符合的結果",
@@ -361,7 +382,8 @@
     "desktopNotification": "桌面通知",
     "desktopNotificationToggle": "桌面通知開關",
     "unreadSummary": "目前有 {{total}} 則未讀,分佈於 {{sessions}} 個會話",
-    "noUnread": "目前沒有未讀訊息"
+    "noUnread": "目前沒有未讀訊息",
+    "primaryNav": "主導覽"
   },
   "core": {
     "loginApiMode": "API:{{api}} · 模式:{{mode}}",
@@ -1928,7 +1950,8 @@
     "statusQueued": "排隊中",
     "statusClosed": "已結束",
     "closedBadge": "已結束",
-    "reopen": "重新開啟"
+    "reopen": "重新開啟",
+    "visitorTypingPreview": "訪客正在輸入:"
   },
   "fields": {
     "settings": {
@@ -1986,7 +2009,8 @@
     },
     "deleteConfirm": "確定刪除此自訂欄位?已填入的值將不再顯示,但仍保留於既有工單資料中。",
     "error": "操作失敗,請稍後再試",
-    "errorConflict": "此欄位鍵已存在,請換一個"
+    "errorConflict": "此欄位鍵已存在,請換一個",
+    "requiredMissing": "請先填寫必填欄位"
   },
   "import": {
     "button": "匯入",
@@ -2074,7 +2098,8 @@
     "noActions": "尚未加入任何動作",
     "actionCount": "個動作",
     "cancel": "取消",
-    "close": "關閉"
+    "close": "關閉",
+    "actionIncomplete": "有動作尚未填妥必填欄位"
   },
   "aitools": {
     "introTitle": "AI 工具呼叫",
@@ -2151,7 +2176,8 @@
     "role": {
       "collaborator": "協作者",
       "watcher": "關注者"
-    }
+    },
+    "mentionNoteFailed": "@提及備註送出失敗,請重試"
   },
   "pagetrail": {
     "tab": "瀏覽軌跡",
@@ -2899,5 +2925,160 @@
       "weekly": "每週",
       "monthly": "每月"
     }
+  },
+  "native": {
+    "notify": {
+      "channelName": "訊息通知",
+      "channelDesc": "新訊息、指派與轉接提醒",
+      "visitor": "訪客"
+    },
+    "server": {
+      "title": "連線到伺服器",
+      "subtitle": "輸入你公司的 kefu 伺服器網址",
+      "urlLabel": "伺服器網址",
+      "connect": "連線",
+      "connecting": "連線中…",
+      "cancel": "取消",
+      "errorEmpty": "請輸入伺服器網址",
+      "errorInvalid": "網址格式不正確",
+      "errorHttps": "App 只能連線 https:// 伺服器",
+      "errorNotKefu": "這個網址不是 kefu 伺服器",
+      "errorOutdated": "此伺服器需要較新版本的 App,請先更新",
+      "errorUnreachable": "無法連線到伺服器,請檢查網址與網路",
+      "switchTitle": "切換伺服器?",
+      "switchDesc": "連結要求改連到 {{server}}。切換後需要重新登入。",
+      "switchConfirm": "前往設定",
+      "intro": "輸入貴公司 kefu 伺服器的網址。不確定網址時,請詢問系統管理員。",
+      "urlHint": "只需填網域,例如 kf.example.com(會自動使用 https)。",
+      "fromLinkHint": "此網址來自設定連結,請確認後再繼續。",
+      "test": "測試連線",
+      "continue": "繼續",
+      "back": "返回,不更換",
+      "appVersion": "App 版本 {{version}}",
+      "saveFailed": "無法儲存伺服器設定,請重試",
+      "linkTitle": "收到伺服器設定連結",
+      "linkDesc": "連結要求改用以下伺服器。請確認是你信任的網址再套用。",
+      "linkApply": "使用此網址",
+      "linkIgnore": "忽略",
+      "okTitle": "連線成功",
+      "okHost": "伺服器",
+      "okVersion": "版本",
+      "okFeatures": "功能",
+      "okLegacy": "伺服器可用,但未提供版本資訊(可能是較舊的版本)。",
+      "featurePassword": "帳號密碼登入",
+      "featureGoogle": "Google 登入",
+      "featureSaml": "SAML 單一登入",
+      "featurePush": "推播通知",
+      "errorEmptyDesc": "請填入貴公司 kefu 伺服器的網址。",
+      "errorInvalidDesc": "請輸入像 https://kf.example.com 這樣的網址。",
+      "errorHttpsTitle": "需要 https 連線",
+      "errorNotKefuDesc": "這個網址有回應,但不是 kefu 服務。請確認網址是否正確,或詢問系統管理員。",
+      "errorOfflineTitle": "裝置目前離線",
+      "errorOfflineDesc": "請檢查 Wi-Fi 或行動網路後再試一次。",
+      "errorTimeoutTitle": "連線逾時",
+      "errorTimeoutDesc": "伺服器沒有在時間內回應,可能是網路不穩或伺服器忙碌,請稍後再試。",
+      "errorDnsTitle": "找不到伺服器",
+      "errorDnsDesc": "無法解析或連上這個網址。請確認拼寫與網路連線,並確認伺服器的 HTTPS 憑證有效。"
+    },
+    "login": {
+      "serverLabel": "伺服器",
+      "serverUnknown": "未設定",
+      "changeServer": "更換伺服器",
+      "changeServerTitle": "更換伺服器?",
+      "changeServerDesc": "將回到伺服器設定畫面。改連其他伺服器後,需要以該伺服器的帳號重新登入。",
+      "changeServerConfirm": "更換",
+      "invalidWithTenant": "電子郵件、密碼或工作區代號不正確",
+      "openAuthenticator": "在驗證器 App 中開啟",
+      "samlLogin": "以 SAML 單一登入 {{slug}}",
+      "tenantTitle": "選擇工作區",
+      "tenantHint": "這個帳號屬於多個工作區,請選擇要登入的工作區。",
+      "tenantRequired": "這個帳號屬於多個工作區,請在「工作區(進階)」填寫工作區代號",
+      "workspaceToggle": "工作區(進階)",
+      "workspaceLabel": "工作區代號",
+      "workspacePlaceholder": "例如 acme",
+      "workspaceHint": "同一帳號屬於多個工作區時填寫;其餘情況可留空。",
+      "workspaceHintSaml": "同一帳號屬於多個工作區,或要使用 SAML 單一登入時填寫;其餘情況可留空。",
+      "sso": {
+        "waiting": "已在瀏覽器開啟登入頁面,完成後會自動回到 App。",
+        "completing": "正在完成登入…",
+        "errOpenBrowser": "無法開啟系統瀏覽器,請重試",
+        "errSamlDisabled": "此工作區尚未啟用 SAML 單一登入,請聯絡管理員",
+        "errNotInvited": "此帳號未被邀請加入工作區,請聯絡管理員",
+        "errUnavailable": "單一登入服務暫時無法使用,請稍後再試",
+        "errInvalidRequest": "登入請求無效,請更新 App 後再試",
+        "errExpired": "登入階段已逾時,請重新登入",
+        "errVerify": "登入驗證失敗,請重新登入",
+        "errIpBlocked": "目前的網路位址不在允許登入的名單內,請聯絡管理員",
+        "err2faEnroll": "組織要求兩步驗證,請改用帳號密碼登入完成設定",
+        "errSuspended": "此工作區已停用,請聯絡管理員",
+        "errRateLimited": "嘗試次數過多,請稍後再試",
+        "errNetwork": "無法連線到伺服器,請檢查網路後再試",
+        "errSamlFailed": "SAML 單一登入失敗,請重試"
+      }
+    },
+    "update": {
+      "title": "請更新 App",
+      "desc": "此伺服器建議使用 {{min}} 以上版本(目前為 {{current}}),部分功能可能無法正常運作。",
+      "dismiss": "先不要"
+    }
+  },
+  "mobile": {
+    "composer": {
+      "placeholder": "輸入訊息…(/ 呼叫快捷語)",
+      "more": "更多工具",
+      "closePanel": "關閉面板",
+      "enhanceNeedsText": "請先輸入內容",
+      "cannedEmpty": "尚無可用的快捷語",
+      "loading": "載入中…"
+    },
+    "message": {
+      "actions": "訊息操作"
+    },
+    "tabBar": "主要分頁",
+    "tab": {
+      "visitors": "訪客",
+      "more": "更多",
+      "unreadLabel": "{{label}},{{count}} 則未讀"
+    },
+    "openMenu": "開啟選單",
+    "secondaryNav": "子選單",
+    "secondaryPickerDesc": "選擇要前往的項目",
+    "group": {
+      "account": "帳號",
+      "team": "團隊",
+      "conversation": "對話",
+      "ai": "AI",
+      "channels": "渠道",
+      "advanced": "進階"
+    },
+    "search": {
+      "hint": "輸入關鍵字搜尋會話、訊息與聯絡人"
+    },
+    "drawer": {
+      "desc": "導覽、坐席狀態與帳號設定",
+      "darkMode": "深色模式",
+      "version": "版本 {{version}}",
+      "toggleSub": "展開 {{label}} 子選單"
+    },
+    "context": {
+      "title": "訪客資訊與工具"
+    },
+    "conv": {
+      "back": "返回會話清單",
+      "moreActions": "更多操作",
+      "backToActions": "返回",
+      "snoozedNotice": "已延後 {{duration}}",
+      "unsnoozedNotice": "已取消延後",
+      "snoozeFailed": "延後失敗,請重試"
+    },
+    "workspace": {
+      "backToList": "返回會話清單"
+    }
+  },
+  "conn": {
+    "connected": "已連線",
+    "connecting": "連線中…",
+    "reconnecting": "重新連線中…",
+    "mock": "模擬即時"
   }
 }

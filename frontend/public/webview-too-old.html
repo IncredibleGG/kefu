@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>kefu</title>
+<!--
+  Capacitor server.errorPath:Android System WebView 低於 111(Tailwind v4 需要 Chrome 111+)時顯示。
+  刻意只用最舊 WebView 也支援的語法:不用 CSS 變數以外的新特性、不用 ES2015+ 以外的 JS、無外部資源。
+  此頁在 Android 上無法使用 Capacitor 外掛,只能提示使用者自行到 Play 商店更新。
+-->
+<style>
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #ffffff; color: #1a1a24;
+    font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans TC", "Noto Sans SC", "PingFang TC", sans-serif;
+    line-height: 1.6; -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 48px 20px 32px; }
+  .logo {
+    width: 64px; height: 64px; border-radius: 15px; background: #7c5cff;
+    margin: 0 auto 20px; display: block;
+  }
+  section { padding: 18px 0; border-top: 1px solid #e6e6ee; }
+  section:first-of-type { border-top: 0; }
+  h1 { font-size: 19px; margin: 0 0 8px; }
+  p { margin: 0 0 6px; font-size: 15px; color: #45455a; }
+  b { color: #1a1a24; }
+  .ios { display: none; }
+  .is-ios .ios { display: block; }
+  .is-ios .android { display: none; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #0f0f14; color: #ececf3; }
+    section { border-top-color: #26262f; }
+    p { color: #b4b4c4; }
+    b { color: #ececf3; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+    <rect width="32" height="32" rx="7" fill="#7c5cff"/>
+    <g transform="translate(16 16) scale(1.1) translate(-16 -15.5)"><path d="M9 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-6l-4 3v-3a3 3 0 0 1-1-2z" fill="#fff"/></g>
+  </svg>
+
+  <section lang="zh-Hant">
+    <h1>系統元件版本過舊</h1>
+    <p class="android">kefu 需要較新的網頁元件才能執行。請開啟 <b>Play 商店</b>,搜尋並更新 <b>「Android System WebView」</b>與 <b>「Chrome」</b>,完成後重新開啟 kefu。</p>
+    <p class="ios">kefu 需要 iOS 16.4 以上。請至「設定 › 一般 › 軟體更新」更新系統後再開啟 kefu。</p>
+  </section>
+
+  <section lang="zh-CN">
+    <h1>系统组件版本过旧</h1>
+    <p class="android">kefu 需要较新的网页组件才能运行。请打开 <b>Play 商店</b>,搜索并更新 <b>“Android System WebView”</b>和 <b>“Chrome”</b>,完成后重新打开 kefu。</p>
+    <p class="ios">kefu 需要 iOS 16.4 或以上版本。请前往“设置 › 通用 › 软件更新”更新系统后再打开 kefu。</p>
+  </section>
+
+  <section lang="en">
+    <h1>Your system web component is out of date</h1>
+    <p class="android">kefu needs a newer web engine. Open the <b>Play Store</b>, search for <b>"Android System WebView"</b> and <b>"Chrome"</b>, update both, then reopen kefu.</p>
+    <p class="ios">kefu requires iOS 16.4 or later. Go to Settings › General › Software Update, then reopen kefu.</p>
+  </section>
+</div>
+<script>
+  // iOS 載入失敗時同一頁也會被顯示:改顯示 iOS 的說明
+  if (/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent)) {
+    document.documentElement.className += " is-ios";
+  }
+</script>
+</body>
+</html>

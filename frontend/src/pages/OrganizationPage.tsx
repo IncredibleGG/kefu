@@ -419,13 +419,14 @@ function TreeRow({
           <button
             type="button"
             onClick={() => onToggle(node.id)}
-            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground pointer-coarse:size-10"
             aria-label={t(isOpen ? "organization.collapse" : "organization.expand")}
           >
             {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
         ) : (
-          <span className="h-5 w-5 shrink-0" />
+          // 佔位寬度與展開鈕一致(觸控時同步放大),子節點才對齊
+          <span className="h-5 w-5 shrink-0 pointer-coarse:size-10" />
         )}
 
         <button
@@ -443,7 +444,8 @@ function TreeRow({
         </button>
 
         {canManage && (
-          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          // 滑鼠:懸停 / 聚焦才顯示;觸控裝置沒有懸停,一律常駐(否則看不到卻點得到)
+          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
             <Button
               variant="ghost"
               size="icon-sm"

@@ -17,6 +17,7 @@ import + try/except 降級:對應模組尚未落地時,dispatch 仍能獨立運�
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from importlib import import_module
 
 from sqlalchemy import func, select
@@ -58,16 +59,98 @@ async def _persist_message(db, tenant_id, session_id, *, sender_type, content, m
         except Exception:  # 簽章不符或內部錯誤 → 降級為本地寫入
             logger.warning("add_message seam 失敗,改用本地 ORM 寫入", exc_info=True)
 
+    # 本地寫入仍套用卡號遮罩(與 add_message 一致;遮罩函式不可用時原樣)
+    mask = _optional("app.services.conversation", "mask_card_numbers")
+    text = content or ""
+    if mask is not None:
+        try:
+            text = mask(text)
+        except Exception:
+            logger.warning("mask_card_numbers 失敗,沿用原文", exc_info=True)
     msg = Message(
         tenant_id=tenant_id,
         session_id=session_id,
         sender_type=sender_type,
-        content=content or "",
+        content_type="text",
+        content=text,
         meta=meta,
     )
     db.add(msg)
+    try:
+        session = await _load_session(db, tenant_id, session_id)
+    except Exception:  # 讀不到會話不影響落庫,只是事件少了 handler 等欄位
+        logger.warning("降級寫入:讀取會話失敗", exc_info=True)
+        session = None
+    if session is not None:
+        session.last_message_at = datetime.now(timezone.utc)
     await db.flush()
+    # add_message 會發 message.new / session.activity;降級路徑也必須補發,
+    # 否則 web 訪客(/ws/widget 只靠 message.new)收不到 AI 回覆、坐席列表也不會更新。
+    await _publish_fallback_message(tenant_id, session_id, msg, session)
     return msg
+
+
+async def _publish_fallback_message(tenant_id, session_id, msg, session) -> None:
+    """降級寫入後補發 realtime 事件(payload 形狀與 add_message 相同);失敗只記 log。"""
+    publish = _optional("app.services.realtime", "publish")
+    publish_agents = _optional("app.services.realtime", "publish_agents")
+    make_event = _optional("app.services.realtime", "make_event")
+    if make_event is None:
+        return
+    content_type = getattr(msg, "content_type", None) or "text"
+    message_id = str(msg.id) if getattr(msg, "id", None) else None
+    if publish is not None:
+        try:
+            await publish(
+                tenant_id,
+                session_id,
+                make_event(
+                    "message.new",
+                    {
+                        "session_id": str(session_id),
+                        "message_id": message_id,
+                        "sender_type": msg.sender_type,
+                        "sender_id": str(msg.sender_id) if msg.sender_id else None,
+                        "content_type": content_type,
+                        "content": msg.content,
+                        "meta": msg.meta,
+                    },
+                ),
+            )
+        except Exception:
+            logger.warning("降級寫入後 publish message.new 失敗", exc_info=True)
+    if publish_agents is not None:
+        preview_fn = _optional("app.services.conversation", "activity_preview")
+        try:
+            preview = preview_fn(msg.content, content_type) if preview_fn else ""
+        except Exception:
+            preview = ""
+        last_at = getattr(session, "last_message_at", None) if session is not None else None
+        try:
+            await publish_agents(
+                tenant_id,
+                make_event(
+                    "session.activity",
+                    {
+                        "session_id": str(session_id),
+                        "last_message_at": last_at.isoformat() if last_at else None,
+                        "message_id": message_id,
+                        "sender_type": msg.sender_type,
+                        "content_type": content_type,
+                        "preview": preview,
+                        "handler_type": getattr(session, "handler_type", None),
+                        "handler_staff_id": str(session.handler_staff_id)
+                        if session is not None and session.handler_staff_id
+                        else None,
+                        "status": getattr(session, "status", None),
+                        "visitor_id": str(session.visitor_id)
+                        if session is not None and session.visitor_id
+                        else None,
+                    },
+                ),
+            )
+        except Exception:
+            logger.warning("降級寫入後 publish_agents session.activity 失敗", exc_info=True)
 
 
 async def _send_to_visitor(db, tenant_id, session_id, message) -> None:

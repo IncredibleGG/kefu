@@ -2,15 +2,17 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import i18n from "@/lib/i18n";
 import { playPing } from "@/lib/notify";
-import { pushDesktopNotification } from "@/lib/notifications";
+import { isAppForeground, isNative, notify as platformNotify } from "@/lib/platform";
 
 /**
  * 通知偏好 + 未讀計數 + 事件觸達統一入口。
  * - sound / desktop:開關存 localStorage(persist),供頂欄切換。
  * - unread:各會話未讀數(記憶體態,不持久);activeSessionId 為「正在看的會話」,
  *   收到其新訊息不計未讀。
- * - notifyEvent:即時事件(新訊息 / 指派 / 佇列 / @提及 / SLA)的統一觸達入口,
- *   一次處理「未讀計數 + 音效 + 桌面通知」,並做去重 / 節流避免刷屏。
+ * - notifyEvent:即時事件(新訊息 / 指派 / 佇列 / @提及 / SLA)的**唯一**觸達入口,
+ *   一次處理「未讀計數 + 音效 + 系統通知」,並做去重 / 節流避免刷屏。
+ *   系統通知經 lib/platform.notify(web:Notification API;桌面:Tauri 通知;手機:本機通知),
+ *   前景判斷一律用 platform.isAppForeground()。
  */
 
 /** 可觸達通知的事件種類。 */
@@ -26,11 +28,14 @@ export interface NotifyPayload {
   text?: string;
   /** 去重鍵(如 messageId);缺省則用 kind + sessionId。 */
   dedupId?: string;
+  /** 訊息 id:同一則訊息可能由 message.new(會話頻道)與 session.activity(坐席頻道)各到一次,
+   *  以此長時間去重,未讀只加一次。 */
+  messageId?: string;
 }
 
 interface NotifyState {
   sound: boolean;
-  desktop: boolean; // 瀏覽器桌面通知
+  desktop: boolean; // 系統通知(web:瀏覽器桌面通知;原生殼預設開啟)
   unread: Record<string, number>;
   activeSessionId: string | null;
   setSound: (v: boolean) => void;
@@ -50,6 +55,20 @@ const DEDUP_MS = 4000;
 const SOUND_THROTTLE_MS = 1500;
 const _seen = new Map<string, number>();
 let _lastSound = 0;
+
+/** 已處理過的訊息 id(有界,先進先出)。 */
+const MESSAGE_SEEN_MAX = 500;
+const _seenMessages = new Set<string>();
+
+function messageSeen(id: string): boolean {
+  if (_seenMessages.has(id)) return true;
+  _seenMessages.add(id);
+  if (_seenMessages.size > MESSAGE_SEEN_MAX) {
+    const first = _seenMessages.values().next().value;
+    if (first !== undefined) _seenMessages.delete(first);
+  }
+  return false;
+}
 
 function dedupHit(sig: string, now: number): boolean {
   const last = _seen.get(sig);
@@ -100,7 +119,8 @@ export const useNotify = create<NotifyState>()(
   persist(
     (set, get) => ({
       sound: true,
-      desktop: false,
+      // 原生殼預設開啟系統通知(登入後由 AppLayout 請求權限);web 維持需手動開啟
+      desktop: isNative,
       unread: {},
       activeSessionId: null,
 
@@ -134,9 +154,14 @@ export const useNotify = create<NotifyState>()(
         const { sessionId } = payload;
         const now = Date.now();
 
+        // 0) 同一則訊息(跨 message.new / session.activity 兩路)只處理一次
+        if (payload.messageId && messageSeen(payload.messageId)) return;
+
         // 1) 去重:同事件短時間內只處理一次
-        const sig = `${kind}:${sessionId ?? "-"}:${payload.dedupId ?? ""}`;
+        const sig = `${kind}:${sessionId ?? "-"}:${payload.dedupId ?? payload.messageId ?? ""}`;
         if (dedupHit(sig, now)) return;
+
+        const foreground = isAppForeground();
 
         // 2) 未讀:綁定會話的事件才計數;bump 內部已跳過「正在看的會話」
         const countsUnread =
@@ -144,8 +169,8 @@ export const useNotify = create<NotifyState>()(
         const isActive = sessionId != null && get().activeSessionId === sessionId;
         if (countsUnread && sessionId) get().bump(sessionId);
 
-        // 正在看的會話,其新訊息 / 提及不再以音效 / 桌面打擾(未讀也已跳過)
-        if (isActive && (kind === "message" || kind === "mention")) return;
+        // 正在看的會話且 App 在前景:其新訊息 / 提及 / 指派不再以音效 / 通知打擾(未讀也已跳過)
+        if (isActive && foreground && (kind === "message" || kind === "mention" || kind === "assigned")) return;
 
         const { title, body } = buildText(kind, payload);
 
@@ -155,9 +180,10 @@ export const useNotify = create<NotifyState>()(
           playPing();
         }
 
-        // 4) 桌面通知:尊重桌面開關(實際彈出仍受權限 / 前景分頁限制,見 lib/notifications)
-        if (get().desktop) {
-          pushDesktopNotification({ title, body, tag: sessionId ?? kind, sessionId });
+        // 4) 系統通知:尊重開關;App 在前景時不彈(未讀徽章 + 音效已足夠)。
+        //    實際彈出仍受權限限制(見 lib/platform 各 adapter)
+        if (get().desktop && !foreground) {
+          void platformNotify({ title, body, tag: sessionId ?? kind, sessionId });
         }
       },
     }),

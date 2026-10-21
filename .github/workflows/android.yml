@@ -1,0 +1,198 @@
+# Android(Capacitor 8):debug APK(未上架、可直接安裝)+ 模擬器冒煙測試。
+# 選填 secrets:
+#   GOOGLE_SERVICES_JSON_B64     google-services.json 的 base64(沒有時推播不會運作,但建置照樣成功)
+#   ANDROID_DEBUG_KEYSTORE_B64   固定的 debug.keystore base64(讓每次建置簽章相同,新版才能覆蓋安裝)
+name: android
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '!frontend/src-tauri/**'
+      - '!frontend/ios/**'
+      - 'clients/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+  workflow_call:
+    secrets:
+      GOOGLE_SERVICES_JSON_B64:
+        required: false
+      ANDROID_DEBUG_KEYSTORE_B64:
+        required: false
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    name: build (debug apk)
+    runs-on: ubuntu-latest           # 已裝 Android SDK(platform 36、build-tools 35/36/37)
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+      DEBUG_KS_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # 建置號取 git commit 數,需要完整歷史
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'           # ubuntu 預設 17,Capacitor 8 需要 21
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - run: npm ci
+
+      - name: 注入品牌與版本
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 建置號 = commit 數:同一 commit 在各 workflow 一致且單調遞增,
+          # 避免 run_number 各自計數造成 Android versionCode 倒退而無法覆蓋安裝
+          args=(--build "$(git rev-list --count HEAD)")
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            v="${GITHUB_REF_NAME#v}"
+            v="${v%%[-+]*}"
+            args+=(--version "$v")
+          fi
+          node clients/scripts/sync-brand.mjs "${args[@]}"
+
+      - name: native 建置
+        # 有 google-services.json 才開啟 Android 推播註冊(沒有 Firebase 設定時呼叫 register 會原生閃退);
+        # 已存在的環境變數優先於 .env.native
+        env:
+          VITE_FCM_ENABLED: ${{ env.GOOGLE_SERVICES_JSON_B64 != '' && 'on' || 'off' }}
+        run: npm run build:native
+
+      - run: npx cap sync android
+
+      - name: google-services.json(選填,推播用)
+        if: env.GOOGLE_SERVICES_JSON_B64 != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 -d > android/app/google-services.json
+          echo "已寫入 android/app/google-services.json"
+
+      - name: 共用 debug keystore(選填,讓新版能直接覆蓋安裝)
+        if: env.DEBUG_KS_B64 != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.android
+          printf '%s' "$DEBUG_KS_B64" | base64 -d > ~/.android/debug.keystore
+          echo "已寫入 ~/.android/debug.keystore"
+
+      - name: assembleDebug
+        working-directory: frontend/android
+        run: |
+          chmod +x ./gradlew           # 從 Windows commit 或 zip 搬過來會掉執行權限
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 整理產物
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/kefu-android-debug.apk"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          path: kefu-android-debug.apk
+          archive: false               # 單一檔案不壓縮,artifact 名稱就是檔名
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------- 冒煙測試:模擬器安裝、啟動、截圖(暫不擋流程) ----------
+
+  smoke-android:
+    name: smoke (android emulator)
+    needs: apk
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: kefu-android-debug.apk
+          path: pkg
+          skip-decompress: true        # APK 本身是 zip 格式,不能讓它被解開
+
+      - name: 啟用 KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # android-emulator-runner 的 script 是逐行各自執行,所以先寫成一個完整的 shell 腳本
+      - name: 準備冒煙腳本
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/smoke"
+          cat > "$RUNNER_TEMP/android-smoke.sh" <<'EOF'
+          set -uo pipefail
+          out="$GITHUB_WORKSPACE/smoke"
+          pkg="cc.kf56k.kefu"
+          apk="$GITHUB_WORKSPACE/pkg/kefu-android-debug.apk"
+          collect() {
+            adb logcat -d > "$out/logcat.txt" 2>&1 || true
+            adb logcat -d -s chromium:V Capacitor:V Capacitor/Console:V AndroidRuntime:E > "$out/logcat-app.txt" 2>&1 || true
+          }
+          trap collect EXIT
+          ls -la "$GITHUB_WORKSPACE/pkg"
+          adb logcat -c || true
+          adb install -r -g "$apk" 2>&1 | tee "$out/install.log"
+          adb shell pm list packages | grep -q "$pkg" || { echo "安裝失敗:找不到 $pkg"; exit 1; }
+          act=$(adb shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER "$pkg" | tr -d '\r' | tail -n 1)
+          echo "launcher activity: $act" | tee "$out/start.log"
+          if [[ "$act" == */* ]]; then
+            adb shell am start -W -n "$act" 2>&1 | tee -a "$out/start.log"
+          else
+            adb shell monkey -p "$pkg" -c android.intent.category.LAUNCHER 1 2>&1 | tee -a "$out/start.log"
+          fi
+          sleep 25
+          adb exec-out screencap -p > "$out/android.png"
+          adb shell dumpsys package "$pkg" | grep -E "versionName|versionCode" > "$out/version.txt" || true
+          if adb shell pidof "$pkg" > "$out/process.txt"; then
+            echo "App 執行中"
+          else
+            echo "App 行程不存在(可能已閃退)" | tee "$out/process.txt"
+            exit 1
+          fi
+          EOF
+
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot-save
+          script: bash "${{ runner.temp }}/android-smoke.sh"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-android
+          path: smoke/
+          if-no-files-found: warn
+          retention-days: 14
