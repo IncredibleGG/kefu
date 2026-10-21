@@ -288,28 +288,14 @@ jobs:
           set -uo pipefail
           out="$GITHUB_WORKSPACE/e2e-out"
           maestro --version | tee "$out/maestro-version.txt"
-          cd "$out"
-          maestro --device "$SIM_UDID" test \
-            -e E2E_SERVER="${E2E_SERVER:-https://kf.56k.cc}" \
-            -e E2E_EMAIL="$E2E_EMAIL" \
-            -e E2E_PASSWORD="$E2E_PASSWORD" \
-            --format junit --output "$out/report.xml" \
-            --test-output-dir "$out/maestro-output" \
-            --debug-output "$out/maestro-debug" \
-            "$GITHUB_WORKSPACE/e2e/maestro/login.yaml" 2>&1 | tee "$out/maestro.txt"
-          rc=${PIPESTATUS[0]}
-          if [ "$rc" -ne 0 ]; then
-            xcrun simctl io "$SIM_UDID" screenshot "$out/failure-screen.png" || true
-            maestro --device "$SIM_UDID" hierarchy > "$out/failure-hierarchy.json" 2>&1 || true
-          fi
-          exit "$rc"
+          # 跑 e2e/maestro/login.yaml,失敗會重跑一次;截圖收在 screenshots/
+          E2E_PLATFORM=ios bash "$GITHUB_WORKSPACE/e2e/maestro/run.sh" "$out" --device "$SIM_UDID"
 
       - name: 收集截圖與記錄
         if: always() && steps.cfg.outputs.ok == 'true'
         shell: bash
         run: |
-          out="$GITHUB_WORKSPACE/e2e-out"; mkdir -p "$out/screenshots"
-          find "$out" "$GITHUB_WORKSPACE/e2e" -name '0*.png' -not -path "$out/screenshots/*" -exec cp {} "$out/screenshots/" \; 2>/dev/null || true
+          out="$GITHUB_WORKSPACE/e2e-out"
           cp -R "$HOME/.maestro/tests" "$out/maestro-tests" 2>/dev/null || true
           if [ -n "${SIM_UDID:-}" ]; then
             xcrun simctl spawn "$SIM_UDID" log show --last 15m --style compact --predicate 'process == "App"' > "$out/system.log" 2>&1 || true

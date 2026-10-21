@@ -278,30 +278,14 @@ jobs:
           collect() {
             adb logcat -d > "$out/logcat.txt" 2>&1 || true
             adb logcat -d -s chromium:V Capacitor:V Capacitor/Console:V AndroidRuntime:E > "$out/logcat-app.txt" 2>&1 || true
-            # takeScreenshot 依 Maestro 版本可能寫在工作目錄或 test-output-dir,統一收進 screenshots/
-            mkdir -p "$out/screenshots"
-            find "$out" "$GITHUB_WORKSPACE/e2e" -name '0*.png' -not -path "$out/screenshots/*" -exec cp {} "$out/screenshots/" \; 2>/dev/null || true
             cp -R "$HOME/.maestro/tests" "$out/maestro-tests" 2>/dev/null || true
           }
           trap collect EXIT
           adb install -r -g "$apk" 2>&1 | tee "$out/install.log"
           adb shell pm list packages | grep -q "$pkg" || { echo "安裝失敗:找不到 $pkg"; exit 1; }
           maestro --version | tee "$out/maestro-version.txt"
-          cd "$out"
-          maestro test \
-            -e E2E_SERVER="${E2E_SERVER:-https://kf.56k.cc}" \
-            -e E2E_EMAIL="$E2E_EMAIL" \
-            -e E2E_PASSWORD="$E2E_PASSWORD" \
-            --format junit --output "$out/report.xml" \
-            --test-output-dir "$out/maestro-output" \
-            --debug-output "$out/maestro-debug" \
-            "$GITHUB_WORKSPACE/e2e/maestro/login.yaml" 2>&1 | tee "$out/maestro.txt"
-          rc=${PIPESTATUS[0]}
-          if [ "$rc" -ne 0 ]; then
-            adb exec-out screencap -p > "$out/failure-screen.png" || true
-            maestro hierarchy > "$out/failure-hierarchy.json" 2>&1 || true
-          fi
-          exit "$rc"
+          # 跑 e2e/maestro/login.yaml,失敗會重跑一次(模擬器偶發 Device server died);截圖收在 screenshots/
+          E2E_PLATFORM=android bash "$GITHUB_WORKSPACE/e2e/maestro/run.sh" "$out"
           SH
 
       - uses: reactivecircus/android-emulator-runner@v2

@@ -38,13 +38,16 @@ Repository secrets(**值不可寫進檔案或印到記錄**):
 | `05-workspace.png` | 坐席工作台(會話清單分頁「我的 / 未分配 / 佇列 / 在線」)— **判定成功的畫面** |
 | `failure-*.png` / `failure-*.html` / `failure-hierarchy.json` | 失敗時的畫面與 DOM / 元件樹,用來調整選擇器 |
 
-Maestro 的截圖統一收進 artifact 的 `screenshots/`;桌面版直接放在 artifact 根目錄。
+Maestro 的截圖統一收進 artifact 的 `screenshots/`(只放最後一次嘗試的;每次嘗試的完整記錄在 `attempt-N/`)。
+模擬器偶發 `Device server died` 這類基礎設施問題時 `run.sh` 會自動重跑一次(`E2E_ATTEMPTS` 可調)。
+桌面版截圖直接放在 artifact 根目錄。
 
 ## 檔案
 
 ```
 e2e/
 ├── maestro/
+│   ├── run.sh                   # CI 入口:跑 login.yaml(失敗重跑一次)、收截圖到 screenshots/
 │   ├── login.yaml               # Android / iOS 共用主流程
 │   ├── common/set-server.yaml   # E2E_SERVER 與預填值不同時改網址
 │   ├── android/submit-login.yaml  # 收鍵盤 + 點「登入」
@@ -97,10 +100,9 @@ runtime 若恢復採用環境變數,這個 job 會直接通過。
 curl -fsSL https://get.maestro.mobile.dev | bash      # 需要 Java 17+
 # Android:開好模擬器並 adb install -r -g kefu-android-debug.apk
 # iOS:xcrun simctl boot <udid> && xcrun simctl install <udid> App.app
-maestro test \
-  -e E2E_SERVER=https://kf.56k.cc \
-  -e E2E_EMAIL="$E2E_EMAIL" -e E2E_PASSWORD="$E2E_PASSWORD" \
-  e2e/maestro/login.yaml
+export E2E_SERVER=https://kf.56k.cc E2E_EMAIL=... E2E_PASSWORD=...
+bash e2e/maestro/run.sh ./e2e-out                    # iOS 可加:--device <UDID>
+# 或直接:maestro test -e E2E_SERVER=… -e E2E_EMAIL=… -e E2E_PASSWORD=… e2e/maestro/login.yaml
 ```
 
 `launchApp` 帶 `clearState: true`,每次都從伺服器設定頁開始(會清掉 App 已存的伺服器與登入狀態)。
