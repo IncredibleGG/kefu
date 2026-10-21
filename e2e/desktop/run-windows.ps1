@@ -100,7 +100,14 @@ foreach ($how in 'env', 'env-basicuser', 'registry') {
     ForEach-Object { Note "browser 行程:$($_.CommandLine)" }
   Stop-Kefu
 }
-if (-not $attached) { Note "結果:兩種方式都無法讓 WebView2 開 DevTools 埠"; exit 1 }
+if (-not $attached) {
+  Note "結果:環境變數與登錄覆寫都無法讓 kefu 的 WebView2 開 DevTools 埠"
+  # 對照組:用官方 WebView2 SDK 自己開 WebView2,判斷是 runtime / runner 的問題還是 App 綁的 loader 的問題
+  Remove-Item -Path $regPath -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
+  & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $here 'webview2-probe.ps1') (Join-Path $out 'webview2-probe.log')
+  exit 1
+}
 
 $ed = Start-Process -FilePath $env:MSEDGEDRIVER `
   -ArgumentList '--port=9515', '--verbose', "--log-path=$(Join-Path $out 'msedgedriver.log')" -PassThru
