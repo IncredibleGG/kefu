@@ -206,3 +206,123 @@ jobs:
           path: smoke/
           if-no-files-found: warn
           retention-days: 14
+
+  # ---------- E2E:模擬器上跑 Maestro,伺服器設定 → 登入 → 工作台(暫不擋流程) ----------
+  # 帳密來自 secrets E2E_SERVER / E2E_EMAIL / E2E_PASSWORD;沒設定(例如 fork 的 PR)時整個跳過。
+  # 流程檔在 e2e/maestro/,說明見 e2e/README.md。
+
+  e2e-android:
+    name: e2e (android login)
+    needs: apk
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 40
+    env:
+      E2E_SERVER: ${{ secrets.E2E_SERVER }}
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      MAESTRO_VERSION: 2.11.0
+      MAESTRO_CLI_NO_ANALYTICS: '1'
+    steps:
+      - name: 檢查 E2E secrets
+        id: cfg
+        shell: bash
+        run: |
+          if [[ -n "$E2E_EMAIL" && -n "$E2E_PASSWORD" ]]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::未設定 E2E_EMAIL / E2E_PASSWORD,跳過 E2E"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          sparse-checkout: e2e
+
+      - uses: actions/download-artifact@v8
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          name: kefu-android-debug.apk
+          path: pkg
+          skip-decompress: true
+
+      - uses: actions/setup-java@v6
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 安裝 Maestro
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: 啟用 KVM
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 準備 E2E 腳本
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/e2e-out"
+          cat > "$RUNNER_TEMP/android-e2e.sh" <<'SH'
+          set -uo pipefail
+          out="$GITHUB_WORKSPACE/e2e-out"
+          pkg="cc.kf56k.kefu"
+          apk="$GITHUB_WORKSPACE/pkg/kefu-android-debug.apk"
+          collect() {
+            adb logcat -d > "$out/logcat.txt" 2>&1 || true
+            adb logcat -d -s chromium:V Capacitor:V Capacitor/Console:V AndroidRuntime:E > "$out/logcat-app.txt" 2>&1 || true
+            # takeScreenshot 依 Maestro 版本可能寫在工作目錄或 test-output-dir,統一收進 screenshots/
+            mkdir -p "$out/screenshots"
+            find "$out" "$GITHUB_WORKSPACE/e2e" -name '0*.png' -not -path "$out/screenshots/*" -exec cp {} "$out/screenshots/" \; 2>/dev/null || true
+            cp -R "$HOME/.maestro/tests" "$out/maestro-tests" 2>/dev/null || true
+          }
+          trap collect EXIT
+          adb install -r -g "$apk" 2>&1 | tee "$out/install.log"
+          adb shell pm list packages | grep -q "$pkg" || { echo "安裝失敗:找不到 $pkg"; exit 1; }
+          maestro --version | tee "$out/maestro-version.txt"
+          cd "$out"
+          maestro test \
+            -e E2E_SERVER="${E2E_SERVER:-https://kf.56k.cc}" \
+            -e E2E_EMAIL="$E2E_EMAIL" \
+            -e E2E_PASSWORD="$E2E_PASSWORD" \
+            --format junit --output "$out/report.xml" \
+            --test-output-dir "$out/maestro-output" \
+            --debug-output "$out/maestro-debug" \
+            "$GITHUB_WORKSPACE/e2e/maestro/login.yaml" 2>&1 | tee "$out/maestro.txt"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            adb exec-out screencap -p > "$out/failure-screen.png" || true
+            maestro hierarchy > "$out/failure-hierarchy.json" 2>&1 || true
+          fi
+          exit "$rc"
+          SH
+
+      - uses: reactivecircus/android-emulator-runner@v2
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot-save
+          script: bash "${{ runner.temp }}/android-e2e.sh"
+
+      - name: 遮蔽記錄裡的帳密
+        if: always() && steps.cfg.outputs.ok == 'true'
+        run: python3 e2e/scripts/redact.py e2e-out
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.cfg.outputs.ok == 'true'
+        with:
+          name: e2e-android
+          path: e2e-out/
+          if-no-files-found: warn
+          retention-days: 7

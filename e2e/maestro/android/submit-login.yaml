@@ -1,0 +1,6 @@
+# Android:收起鍵盤、截圖、按「登入」
+appId: cc.kf56k.kefu
+---
+- hideKeyboard
+- takeScreenshot: 03-login-filled
+- tapOn: "登入"

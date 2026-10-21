@@ -1,0 +1,6 @@
+# iOS:登入後若跳出系統權限詢問(通知等),一律允許,避免擋住畫面
+appId: cc.kf56k.kefu
+---
+- tapOn:
+    text: "Allow|允許"
+    optional: true

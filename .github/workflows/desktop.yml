@@ -238,3 +238,158 @@ jobs:
           path: smoke/
           if-no-files-found: warn
           retention-days: 14
+
+  # ---------- E2E:Windows 上用 tauri-driver + msedgedriver,伺服器設定 → 登入 → 工作台(暫不擋流程) ----------
+  # macOS 沒有 WKWebView 的 WebDriver,只跑 Windows。帳密來自 secrets E2E_SERVER / E2E_EMAIL / E2E_PASSWORD;
+  # 沒設定(例如 fork 的 PR)時整個跳過。測試程式在 e2e/desktop/,說明見 e2e/README.md。
+
+  e2e-windows:
+    name: e2e (windows login)
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    env:
+      E2E_SERVER: ${{ secrets.E2E_SERVER }}
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+    steps:
+      - name: 檢查 E2E secrets
+        id: cfg
+        shell: bash
+        run: |
+          if [[ -n "$E2E_EMAIL" && -n "$E2E_PASSWORD" ]]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::未設定 E2E_EMAIL / E2E_PASSWORD,跳過 E2E"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          sparse-checkout: e2e
+
+      - uses: actions/download-artifact@v8
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          name: kefu-desktop-windows-x64
+          path: pkg
+
+      - uses: actions/setup-node@v7
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/desktop/package-lock.json
+
+      - name: npm ci(selenium-webdriver)
+        if: steps.cfg.outputs.ok == 'true'
+        working-directory: e2e/desktop
+        run: npm ci
+
+      - uses: actions/cache@v6
+        if: steps.cfg.outputs.ok == 'true'
+        id: tauri-driver-cache
+        with:
+          path: ~/.cargo/bin/tauri-driver.exe
+          key: tauri-driver-${{ runner.os }}-v1
+
+      - name: 安裝 tauri-driver
+        if: steps.cfg.outputs.ok == 'true' && steps.tauri-driver-cache.outputs.cache-hit != 'true'
+        run: cargo install tauri-driver --locked
+
+      - name: 靜默安裝 NSIS、準備對應 WebView2 版本的 msedgedriver
+        if: steps.cfg.outputs.ok == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:GITHUB_WORKSPACE 'e2e-out'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $setup = Get-ChildItem pkg -Filter '*-setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw '找不到 NSIS 安裝檔' }
+          $inst = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          "installer: $($setup.Name) exit=$($inst.ExitCode)" | Tee-Object -FilePath (Join-Path $out 'install.log')
+          # NSIS installMode=currentUser 預設裝在 %LOCALAPPDATA%\kefu
+          $candidates = @(
+            (Join-Path $env:LOCALAPPDATA 'kefu\kefu.exe'),
+            (Join-Path $env:ProgramFiles 'kefu\kefu.exe')
+          )
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            $exe = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles -Filter 'kefu.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $exe) { throw '安裝後找不到 kefu.exe' }
+          "exe: $exe" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          "KEFU_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          # WebView2 Runtime 版本(msedgedriver 必須同版)
+          $guid = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $keys = @(
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$guid",
+            "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$guid",
+            "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$guid"
+          )
+          $wv = $keys | ForEach-Object { (Get-ItemProperty $_ -ErrorAction SilentlyContinue).pv } | Where-Object { $_ -and $_ -ne '0.0.0.0' } | Select-Object -First 1
+          "webview2: $wv" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          $drvDir = Join-Path $env:RUNNER_TEMP 'msedgedriver'
+          New-Item -ItemType Directory -Force $drvDir | Out-Null
+          $driver = $null
+          if ($wv) {
+            foreach ($base in 'https://msedgedriver.microsoft.com', 'https://msedgedriver.azureedge.net') {
+              try {
+                $zip = Join-Path $drvDir 'edgedriver.zip'
+                Invoke-WebRequest -Uri "$base/$wv/edgedriver_win64.zip" -OutFile $zip -UseBasicParsing
+                Expand-Archive $zip -DestinationPath $drvDir -Force
+                $driver = Join-Path $drvDir 'msedgedriver.exe'
+                "msedgedriver: $base/$wv" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+                break
+              } catch { "下載失敗 $base/$wv : $($_.Exception.Message)" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append }
+            }
+          }
+          if (-not $driver -or -not (Test-Path $driver)) {
+            # 備援:runner 預裝、對應 Edge 瀏覽器版本的 msedgedriver(通常與 WebView2 同版)
+            $driver = Join-Path $env:EDGEWEBDRIVER 'msedgedriver.exe'
+            "msedgedriver(備援,runner 預裝): $driver" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          }
+          & $driver --version | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          "MSEDGEDRIVER=$driver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: tauri-driver:伺服器設定 → 登入 → 工作台
+        if: steps.cfg.outputs.ok == 'true'
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE 'e2e-out'
+          $td = Start-Process -FilePath (Join-Path $env:USERPROFILE '.cargo\bin\tauri-driver.exe') `
+            -ArgumentList '--port', '4444', '--native-driver', $env:MSEDGEDRIVER -PassThru `
+            -RedirectStandardOutput (Join-Path $out 'tauri-driver.stdout.log') `
+            -RedirectStandardError (Join-Path $out 'tauri-driver.stderr.log')
+          Start-Sleep -Seconds 3
+          $env:E2E_OUT = $out
+          node e2e/desktop/login.mjs 2>&1 | Tee-Object -FilePath (Join-Path $out 'test.log')
+          $rc = $LASTEXITCODE
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+          $bmp.Save((Join-Path $out 'desktop-final.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+          $g.Dispose(); $bmp.Dispose()
+          Stop-Process -Id $td.Id -Force -ErrorAction SilentlyContinue
+          Get-Process kefu, msedgedriver -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          exit $rc
+
+      - name: 遮蔽記錄裡的帳密
+        if: always() && steps.cfg.outputs.ok == 'true'
+        run: python e2e/scripts/redact.py e2e-out
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.cfg.outputs.ok == 'true'
+        with:
+          name: e2e-windows
+          path: e2e-out/
+          if-no-files-found: warn
+          retention-days: 7

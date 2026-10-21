@@ -192,3 +192,134 @@ jobs:
           path: smoke/
           if-no-files-found: warn
           retention-days: 14
+
+  # ---------- E2E:模擬器上跑 Maestro,伺服器設定 → 登入 → 工作台(暫不擋流程) ----------
+  # 帳密來自 secrets E2E_SERVER / E2E_EMAIL / E2E_PASSWORD;沒設定(例如 fork 的 PR)時整個跳過。
+  # 流程檔與 Android 共用(e2e/maestro/),說明見 e2e/README.md。
+
+  e2e-ios:
+    name: e2e (ios login)
+    needs: build
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 40
+    env:
+      E2E_SERVER: ${{ secrets.E2E_SERVER }}
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      MAESTRO_VERSION: 2.11.0
+      MAESTRO_CLI_NO_ANALYTICS: '1'
+    steps:
+      - name: 檢查 E2E secrets
+        id: cfg
+        shell: bash
+        run: |
+          if [[ -n "$E2E_EMAIL" && -n "$E2E_PASSWORD" ]]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::未設定 E2E_EMAIL / E2E_PASSWORD,跳過 E2E"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          sparse-checkout: e2e
+
+      - name: 選擇 Xcode 26.6
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          if [ -d "$XCODE_APP" ]; then sudo xcode-select -s "$XCODE_APP"; fi
+          xcodebuild -version
+
+      - uses: actions/download-artifact@v8
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          name: kefu-ios-simulator.zip
+          path: pkg
+          skip-decompress: true
+
+      - uses: actions/setup-java@v6
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 安裝 Maestro
+        if: steps.cfg.outputs.ok == 'true'
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: 開模擬器、安裝 App
+        if: steps.cfg.outputs.ok == 'true'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          out="$GITHUB_WORKSPACE/e2e-out"; mkdir -p "$out" app
+          ditto -x -k pkg/kefu-ios-simulator.zip app
+          # 挑最新 iOS runtime 裡第一台可用的 iPhone
+          udid=$(xcrun simctl list devices available --json | python3 -c '
+          import json, re, sys
+          best = None
+          for rt, devs in json.load(sys.stdin)["devices"].items():
+              m = re.search(r"iOS-(\d+)-(\d+)", rt)
+              if not m:
+                  continue
+              ver = (int(m.group(1)), int(m.group(2)))
+              phones = [d for d in devs if d.get("isAvailable") and d["name"].startswith("iPhone")]
+              if phones and (best is None or ver > best[0]):
+                  best = (ver, phones[0]["udid"], phones[0]["name"])
+          if best:
+              print(best[1])
+              print("simulator: %s (iOS %d.%d)" % (best[2], best[0][0], best[0][1]), file=sys.stderr)
+          ' 2> "$out/simulator.txt")
+          cat "$out/simulator.txt"
+          test -n "$udid"
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid" || true
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" app/App.app
+
+      - name: Maestro:伺服器設定 → 登入 → 工作台
+        if: steps.cfg.outputs.ok == 'true'
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="$GITHUB_WORKSPACE/e2e-out"
+          maestro --version | tee "$out/maestro-version.txt"
+          cd "$out"
+          maestro --device "$SIM_UDID" test \
+            -e E2E_SERVER="${E2E_SERVER:-https://kf.56k.cc}" \
+            -e E2E_EMAIL="$E2E_EMAIL" \
+            -e E2E_PASSWORD="$E2E_PASSWORD" \
+            --format junit --output "$out/report.xml" \
+            --test-output-dir "$out/maestro-output" \
+            --debug-output "$out/maestro-debug" \
+            "$GITHUB_WORKSPACE/e2e/maestro/login.yaml" 2>&1 | tee "$out/maestro.txt"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            xcrun simctl io "$SIM_UDID" screenshot "$out/failure-screen.png" || true
+            maestro --device "$SIM_UDID" hierarchy > "$out/failure-hierarchy.json" 2>&1 || true
+          fi
+          exit "$rc"
+
+      - name: 收集截圖與記錄
+        if: always() && steps.cfg.outputs.ok == 'true'
+        shell: bash
+        run: |
+          out="$GITHUB_WORKSPACE/e2e-out"; mkdir -p "$out/screenshots"
+          find "$out" "$GITHUB_WORKSPACE/e2e" -name '0*.png' -not -path "$out/screenshots/*" -exec cp {} "$out/screenshots/" \; 2>/dev/null || true
+          cp -R "$HOME/.maestro/tests" "$out/maestro-tests" 2>/dev/null || true
+          if [ -n "${SIM_UDID:-}" ]; then
+            xcrun simctl spawn "$SIM_UDID" log show --last 15m --style compact --predicate 'process == "App"' > "$out/system.log" 2>&1 || true
+          fi
+          python3 e2e/scripts/redact.py e2e-out
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.cfg.outputs.ok == 'true'
+        with:
+          name: e2e-ios
+          path: e2e-out/
+          if-no-files-found: warn
+          retention-days: 7
