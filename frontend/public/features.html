@@ -103,6 +103,13 @@
   .tick{color:var(--ok);flex:none;margin-top:3px}
 
   /* 截图画廊 */
+  /* 原生 App:手機外框(真實截圖) */
+  .phones{display:flex;gap:18px;justify-content:center;align-items:flex-start}
+  .phone{width:min(47%,260px);border-radius:36px;padding:9px;background:#14141a;box-shadow:var(--shadow-lg)}
+  .phone img{display:block;width:100%;height:auto;border-radius:28px}
+  .phone:nth-child(2){margin-top:34px}
+  .platforms{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .platforms span{font-family:var(--mono);font-size:12px;padding:5px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink-2)}
   .gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:26px}
   .gcard{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--surface);box-shadow:var(--shadow)}
   .gcard .browser{border:none;border-radius:0;box-shadow:none}
@@ -301,6 +308,30 @@
     </div>
   </section>
 
+  <!-- 06 原生 App -->
+  <section class="showcase">
+    <div class="scgrid">
+      <div class="sctext">
+        <div class="eyebrow">06 — <span data-k="s7h">原生 App · 四平台</span></div>
+        <h2 data-k="s7t">Windows、macOS、iOS、Android,坐席随身接待。</h2>
+        <p class="l" data-k="s7l">同一套工作台打包成原生 App:桌面端常驻系统托盘、角标显示未读;手机端有专为单手操作设计的界面,访客资料以底部抽屉呈现。首次打开填入服务器地址即可登录。</p>
+        <ul>
+          <li><span class="tick">✓</span><span data-k="s7a"><b>桌面版</b> —— 常驻系统托盘、Dock / 任务栏未读角标、关闭窗口不断线。</span></li>
+          <li><span class="tick">✓</span><span data-k="s7b"><b>手机版</b> —— 列表 → 对话 → 访客抽屉,返回键直觉;支持推送通知(需 Firebase)。</span></li>
+          <li><span class="tick">✓</span><span data-k="s7c"><b>企业登录</b> —— 账号密码 + 两步验证,或通过系统浏览器的 Google / SAML 单点登录。</span></li>
+        </ul>
+        <div class="platforms"><span>Windows</span><span>macOS</span><span>iOS</span><span>Android</span></div>
+        <div class="heroactions"><a class="ghost" href="https://github.com/IncredibleGG/kefu/releases" target="_blank" rel="noopener" data-k="s7cta">下载 App →</a></div>
+      </div>
+      <div class="scvisual">
+        <div class="phones">
+          <div class="phone"><img loading="lazy" src="shots/mobile-conversation.png" width="1170" height="2532" alt="手机版对话:AI 带置信度与来源引用、坐席回复、内部备注"></div>
+          <div class="phone"><img loading="lazy" src="shots/mobile-context.png" width="1170" height="2532" alt="手机版访客信息抽屉:CRM 与 AI 访客画像"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- 截图画廊 -->
   <section class="more">
     <div class="eyebrow" data-k="galEyebrow">更多真实界面</div>
@@ -383,6 +414,8 @@
     s5a:"<b>E-commerce order context</b> — Shopify orders & history in the conversation sidebar the moment you take over.", s5b:"<b>Team notify · event forwarding</b> — Slack alerts, generic event JSON forwarded to your endpoint.", s5c:"<b>Marketing & analytics</b> — Google Analytics event reporting, Mailchimp contact sync.",
     s6h:"Enterprise · security & access", s6t:"Permissions down to each action — built for enterprise & reselling.", s6l:"Role-based access (RBAC) down to each permission code, plus 2FA, enterprise SSO (SAML / Google), audit log, business-hours-aware SLA and secret encryption — meeting enterprise and white-label compliance needs.",
     s6a:"<b>Fine-grained RBAC</b> — role × permission-code matrix, effective on assignment.", s6b:"<b>Enterprise SSO · 2FA · audit</b> — SAML / Google login, two-factor, full audit log.", s6c:"<b>Business-hours SLA</b> — first-response / resolution deadlines count business hours only, with breach alerts.",
+    s7h:"Native apps · 4 platforms", s7t:"Windows, macOS, iOS and Android — support from anywhere.", s7l:"The same workspace packaged as native apps: the desktop app lives in the system tray with unread badges; the phone app has a one-handed layout with visitor details in a bottom sheet. Enter your server address on first launch and sign in.",
+    s7a:"<b>Desktop</b> — system tray, Dock / taskbar unread badges, stays connected when the window is closed.", s7b:"<b>Mobile</b> — list → conversation → visitor sheet with natural back navigation; push notifications (Firebase).", s7c:"<b>Enterprise sign-in</b> — password + 2FA, or Google / SAML single sign-on via the system browser.", s7cta:"Download the apps →",
     galEyebrow:"More real screens", galH:"A full suite — to make support your product.",
     g1h:"Knowledge base · RAG", g1p:"Docs / QA / website — three knowledge types for AI retrieval and cited answers.",
     g2h:"Tickets · CRM", g2p:"Ticket state machine, contacts / company (B2B); one-click conversation-to-ticket.",
@@ -421,6 +454,8 @@
     s5a:"<b>電商訂單脈絡</b> —— Shopify 訂單與消費歷史帶進會話側欄,接手即掌握下單脈絡。", s5b:"<b>團隊通知 · 事件轉發</b> —— Slack 通知、通用事件 JSON 轉發到你的端點。", s5c:"<b>行銷與分析</b> —— Google Analytics 事件上報、Mailchimp 聯絡人同步。",
     s6h:"企業級 · 安全與權限", s6t:"細到每個動作的權限,面向企業與轉售。", s6l:"角色權限(RBAC)細到每個操作碼,搭配 2FA、企業 SSO(SAML / Google)、稽核日誌、營業時間感知 SLA 與機敏加密,滿足企業與白牌轉售的合規要求。",
     s6a:"<b>細粒度 RBAC</b> —— 角色 × 權限碼矩陣,指派即生效。", s6b:"<b>企業 SSO · 2FA · 稽核</b> —— SAML / Google 登入、兩步驗證、完整稽核日誌。", s6c:"<b>營業時間感知 SLA</b> —— 首回應 / 解決時限只計營業時間,違約告警。",
+    s7h:"原生 App · 四平台", s7t:"Windows、macOS、iOS、Android,坐席隨身接待。", s7l:"同一套工作台打包成原生 App:桌面常駐系統匣、角標顯示未讀;手機有專為單手操作設計的版面,訪客資料以底部抽屜呈現。首次開啟填入伺服器網址即可登入。",
+    s7a:"<b>桌面版</b> —— 系統匣常駐、Dock / 工作列未讀角標、關閉視窗不斷線。", s7b:"<b>手機版</b> —— 清單 → 對話 → 訪客抽屜,返回鍵直覺;支援推播(需 Firebase)。", s7c:"<b>企業登入</b> —— 帳密 + 兩步驗證,或經系統瀏覽器的 Google / SAML 單一登入。", s7cta:"下載 App →",
     galEyebrow:"更多真實介面", galH:"一整套,把客服做成產品。",
     g1h:"知識庫 · RAG", g1p:"文件 / QA / 網站三型知識庫,供 AI 檢索與可溯源回答。",
     g2h:"工單 · CRM", g2p:"工單狀態機、聯絡人 / 公司(B2B),會話一鍵轉工單。",
