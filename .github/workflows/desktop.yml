@@ -34,6 +34,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # npm 下載偶發網路中斷(ECONNRESET)時自動重試,避免 CI 被 registry 抖動卡住
+  NPM_CONFIG_FETCH_RETRIES: 5
+  NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: 20000
+  NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: 120000
+
 jobs:
   build:
     name: build (${{ matrix.name }})

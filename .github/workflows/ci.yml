@@ -15,6 +15,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # npm 下載偶發網路中斷(ECONNRESET)時自動重試,避免 CI 被 registry 抖動卡住
+  NPM_CONFIG_FETCH_RETRIES: 5
+  NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: 20000
+  NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: 120000
+
 jobs:
   changes:
     name: 偵測改動範圍
@@ -79,9 +85,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: backend/uv.lock
       - name: 安裝依賴
-        run: uv sync --frozen --extra dev
+        # --locked:uv.lock 與 pyproject.toml 不一致時直接失敗(避免本機綠、CI 紅的依賴漂移)
+        run: uv sync --locked --extra dev
       - name: pytest(不需要 Postgres / Redis)
-        run: uv run pytest -q
+        run: uv run --no-sync pytest -q
 
   frontend:
     name: 前端 tsc + build

@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff>=0.8", "pytest>=8.3", "pytest-asyncio>=0.24"]
+dev = ["ruff>=0.8", "pytest>=8.3", "pytest-asyncio>=0.24", "aiosqlite>=0.20"]  # aiosqlite:測試用 SQLite 記憶體庫
 # 企業 SAML SSO 為 code-ready:安裝此 extra(signxml + lxml)才會啟用完整 XML-DSig
 # 驗簽;未安裝時所有 /api/v1/saml/acs 一律 fail-closed 拒絕(見 app/api/v1/saml.py)。
 saml = ["signxml>=3.2", "lxml>=5.0"]
