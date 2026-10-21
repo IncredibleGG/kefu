@@ -1,5 +1,6 @@
 # --- build stage ---
-FROM node:20-alpine AS build
+# Node 24:與 CI 一致(Capacitor CLI 要求 >= 22)
+FROM node:24-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci

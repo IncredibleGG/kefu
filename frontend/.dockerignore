@@ -1,4 +1,9 @@
-node_modules
-dist
-.git
+# 網頁版映像只需要前端原始碼;原生專案與建置產物不進建置 context
+node_modules/
+dist/
+dist-native/
+android/
+ios/
+src-tauri/
+assets/
 *.tsbuildinfo
