@@ -88,6 +88,40 @@ fn apply_unread(app: &AppHandle, window: Option<&WebviewWindow>, count: u32) {
 }
 
 /// 把主視窗叫到前景:取消最小化 → 顯示 → 聚焦
+/// 計算縮放後的主視窗尺寸(實體像素);已能完整放進螢幕可用區域時回 None(維持原樣)。
+/// 超出時縮到可用區域的 90%,保留邊距。
+fn fitted_size(outer: (u32, u32), area: (u32, u32)) -> Option<(u32, u32)> {
+    let (ow, oh) = outer;
+    let (aw, ah) = area;
+    if aw == 0 || ah == 0 || (ow <= aw && oh <= ah) {
+        return None;
+    }
+    Some((ow.min(aw * 9 / 10), oh.min(ah * 9 / 10)))
+}
+
+/// 小螢幕防溢出:主視窗(預設 1280×800,或 window-state 還原的尺寸)比所在螢幕的可用區域
+/// (扣除工作列 / Dock / 選單列)大時縮小並置中。例如 1366×768 的 Windows 筆電扣掉工作列
+/// 只剩約 728px 高,不縮的話視窗下緣會超出螢幕。須在視窗顯示前呼叫。
+#[cfg(desktop)]
+fn fit_main_window_to_screen(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
+        return;
+    };
+    let monitor = window
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| window.primary_monitor().ok().flatten());
+    let (Some(monitor), Ok(outer)) = (monitor, window.outer_size()) else {
+        return;
+    };
+    let area = monitor.work_area().size;
+    if let Some((width, height)) = fitted_size((outer.width, outer.height), (area.width, area.height)) {
+        let _ = window.set_size(tauri::PhysicalSize::new(width, height));
+        let _ = window.center();
+    }
+}
+
 fn reveal_main_window(app: &AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
         return;
@@ -254,6 +288,10 @@ pub fn run() {
             #[cfg(desktop)]
             build_tray(app.handle())?;
 
+            // 顯示前先確保視窗放得進目前螢幕(小筆電不超出畫面)
+            #[cfg(desktop)]
+            fit_main_window_to_screen(app.handle());
+
             // 視窗在設定檔裡預設隱藏(避免 window-state 還原尺寸前閃一下);
             // 一般啟動就顯示,開機自動啟動則只常駐系統匣。
             let launched_by_autostart = std::env::args().any(|arg| arg == AUTOSTART_ARG);
@@ -294,11 +332,29 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::tray_tooltip;
+    use super::{fitted_size, tray_tooltip};
 
     #[test]
     fn tooltip_shows_unread_count() {
         assert_eq!(tray_tooltip(0), "kefu");
         assert_eq!(tray_tooltip(3), "kefu · 3 則未讀");
+    }
+
+    #[test]
+    fn window_kept_when_it_fits() {
+        assert_eq!(fitted_size((1280, 800), (1920, 1040)), None);
+        assert_eq!(fitted_size((1280, 800), (1280, 800)), None);
+    }
+
+    #[test]
+    fn window_shrunk_on_small_screens() {
+        // 1366×768 筆電扣掉工作列約 1366×728
+        assert_eq!(fitted_size((1280, 800), (1366, 728)), Some((1229, 655)));
+        assert_eq!(fitted_size((1280, 800), (1024, 700)), Some((921, 630)));
+    }
+
+    #[test]
+    fn unknown_work_area_is_ignored() {
+        assert_eq!(fitted_size((1280, 800), (0, 0)), None);
     }
 }
