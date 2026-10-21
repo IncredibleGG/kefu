@@ -1,7 +1,8 @@
 # Diagnostic (Windows PowerShell 5.1, STA). Kept ASCII-only on purpose: PS 5.1 reads BOM-less files as ANSI.
 # Hosts a WebView2 with the official Microsoft.Web.WebView2 SDK and checks whether
 # --remote-debugging-port from WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS takes effect on this runtime,
-# both without and with AdditionalBrowserArguments in the environment options (wry/Tauri always sets them).
+# both without and with AdditionalBrowserArguments in the environment options (wry/Tauri always sets them),
+# and whether the port works at all when the host passes it in the options itself.
 # Usage: powershell.exe -NoProfile -STA -File webview2-probe.ps1 <log file>
 param([string]$LogFile = 'webview2-probe.log')
 $ErrorActionPreference = 'Stop'
@@ -27,7 +28,7 @@ function Wait-Task($t, $sec) {
 }
 
 $port = 9230
-foreach ($case in 'no-options-args', 'with-options-args') {
+foreach ($case in 'no-options-args', 'with-options-args', 'options-remote-debug') {
   $port++
   $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$port"
   $udf = Join-Path $env:RUNNER_TEMP "wv2probe-$case"
@@ -35,8 +36,12 @@ foreach ($case in 'no-options-args', 'with-options-args') {
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "probe $case"; $form.Width = 400; $form.Height = 300
     $form.Show()
+    # options-remote-debug: the port is passed by the host app itself (what an app-side opt-in would do)
     $opts = if ($case -eq 'with-options-args') {
       New-Object Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions('--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection')
+    } elseif ($case -eq 'options-remote-debug') {
+      Remove-Item Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
+      New-Object Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions("--remote-debugging-port=$port")
     } else { $null }
     $wvEnv = Wait-Task ([Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync($null, $udf, $opts)) 60
     Note "${case}: runtime $($wvEnv.BrowserVersionString)"
