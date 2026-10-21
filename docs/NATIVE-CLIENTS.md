@@ -53,8 +53,9 @@ export type ServerInfo = {
 };
 export const DEFAULT_SERVER: string;                 // import.meta.env.VITE_DEFAULT_SERVER ?? "https://kf.56k.cc"
 export function getServerBase(): string;             // web: config.apiBase(""=同源);native: 已存伺服器或 ""
-export function getServerOrigin(): string;           // 絕對 origin(給人 / 第三方的連結);web 且 base 為空時 = window.location.origin
-export function serverHost(): string;                // new URL(getServerOrigin()).host(白牌品牌查詢用)
+export function getServerOrigin(): string;           // API 的絕對 origin(webhook 等給第三方回呼的網址);web 且 base 為空時 = window.location.origin
+export function pageOrigin(): string;                // 給「人」開啟的連結用:web = window.location.origin(頁面網域),native = getServerOrigin()
+export function serverHost(): string;                // new URL(pageOrigin()).host(白牌品牌查詢用)
 export function hasServer(): boolean;                // web 恆為 true
 export function normalizeServerUrl(input: string): string; // 補 https://、去尾斜線;native 只接受 https(localhost/127.0.0.1 除外)
 export function probeServer(url: string): Promise<{ ok: boolean; info?: ServerInfo; error?: string }>; // /health + /api/v1/public/server-info
@@ -63,7 +64,7 @@ export function onServerChange(cb: () => void): () => void;
 export function apiUrl(path: string, params?: Record<string, unknown>): string; // 取代 client.ts buildUrl
 export function wsUrl(path: string, params?: Record<string, string>): string;   // http→ws
 export function fileUrl(u?: string | null): string | null; // "/…" → 伺服器前綴;絕對網址原樣
-export function publicUrl(path: string): string;     // getServerOrigin() + path
+export function publicUrl(path: string): string;     // pageOrigin() + path(邀請 / 重設密碼 / Help Center / embed.js)
 export function getToken(): string | null;
 export function setToken(t: string): void;           // 同步寫 localStorage,非同步寫原生儲存
 export function clearToken(): void;
@@ -127,10 +128,11 @@ export function getDeviceId(): string;               // 穩定 UUID,存在原生
 
 ### 4.2 WebSocket `/ws/agent?token=&session_id=&device_id=&platform=`
 
-- 認證失敗(缺 token、token 無效/過期、帳號停用/刪除、租戶停用)→ **先 accept 再 `close(4401)`**,客戶端才看得到原因;客戶端收到 4401 走登出流程、不再重連。
+- 認證失敗(缺 token、token 無效/過期、帳號停用/刪除、租戶停用)→ **先 accept 再 `close(4401)`**,客戶端才看得到原因;客戶端收到 4401 走登出流程、不再重連。**連線期間**伺服器約每 60 秒複查一次(帳號撤銷 / 租戶停用 / JWT 過期),不通過同樣 `close(4401)`;複查時 DB 故障則放行(同 REST)。
+- 伺服器端事件轉發中斷(例如 Redis 訂閱失敗)→ `close(1011)`,客戶端依退避重連並重新訂閱;連線至少維持 5 秒才關,避免 Redis 持續故障時每秒重連打爆 DB。`/ws/widget` 同樣處理。
 - 客戶端 `{"type":"ping"}`(純文字 JSON frame)→ 伺服器 `{"type":"pong","payload":{},"ts":…}`;客戶端每 25 秒 ping,**收過至少一次 pong 之後**才啟用「10 秒沒 pong 視為斷線重連」(舊版伺服器不回 pong,不會被誤判)。
 - 客戶端 `{"type":"app_state","payload":{"foreground":true|false}}`。
-- 上線狀態改用 Redis 連線登記(`kefu:ws:{staff_id}` hash,TTL 120 秒,伺服器每 30 秒自行刷新):第一條連線出現才設 online、最後一條結束(3 秒寬限)才設 offline;使用者手動設的忙碌/離開不被覆蓋。Redis 不可用時 fail-open(退回連上即上線、斷線即離線)。
+- 上線狀態改用 Redis 連線登記(`kefu:ws:{staff_id}` hash,TTL 120 秒,伺服器每 30 秒自行刷新):第一條連線出現才設 online、最後一條結束(3 秒寬限)才設 offline;使用者手動設的忙碌/離開不被覆蓋;手動設「離線」以 Redis 標記 `kefu:status:manual-offline:{staff_id}` 記錄,重連時不會被改回 online(改設其他狀態即清除)。下線更新後若同時有新連線出現,會改回 online(防競態)。Redis 不可用時 fail-open(退回連上即上線、斷線即離線)。
 - `session.activity` payload 擴充:`message_id, sender_type, content_type, preview(≤80 字、已卡號遮罩), handler_type, handler_staff_id, status, visitor_id`。
 - `session.assigned` 擴充:`handler_staff_id`、`actor`(`"auto"` 或操作者 staff id;搶單認領時為本人;操作者未知時為 null)。原 `staff_id` 保留以向後相容。
 - 轉接事件(`handoff`)擴充:`from_staff_id`(**執行動作的人**,與轉接 system 訊息 meta 一致)、`previous_handler_staff_id`(動作前的負責坐席)、`note`(僅 /transfer 有值);`/transfer` 另帶 `target_staff_id`、`target_skill_group_id`。handoff 事件只發坐席頻道,不進訪客的會話頻道。
@@ -147,7 +149,7 @@ export function getDeviceId(): string;               // 穩定 UUID,存在原生
 ## 5. 原生殼
 
 - **Tauri**:視窗 1280×800、最小 380×560(窄於 768px 自動套手機版面);`backgroundThrottling: disabled`;關閉視窗 = 縮到系統匣,系統匣選單「結束」才真正退出;single-instance(第一個註冊,含 deep-link);window-state;macOS ad-hoc 簽章 `signingIdentity: "-"`;CSP 允許 `connect-src https: wss:`、`img-src https: data: blob:`。
-- **Capacitor**:`android.minWebViewVersion: 111` + `errorPath: "webview-too-old.html"`;iOS deployment target 16.4;Keyboard resize native;註冊 `kefu://`;推播權限在登入後請求;Android 返回鍵順序:關最上層浮層 → `history.back()` → 縮小 App。
+- **Capacitor**:`android.minWebViewVersion: 111` + `errorPath: "webview-too-old.html"`;iOS deployment target 16.4;Keyboard resize native;註冊 `kefu://`;推播權限在登入後請求;Android 返回鍵順序:關最上層浮層 → 頁面覆寫(`setBackOverride`,例如伺服器設定頁開著時只關設定頁、絕不移動背後隱藏的 router)→ 有上一頁(react-router `history.state.idx > 0`)才 `history.back()` → 縮小 App。原生 SSO 的 PKCE 暫存(verifier/state)存 localStorage、5 分鐘有效、用過即清,以撐過系統在瀏覽器登入期間回收 App。
 
 ## 6. CI / 產物
 

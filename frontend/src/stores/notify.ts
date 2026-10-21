@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import i18n from "@/lib/i18n";
 import { playPing } from "@/lib/notify";
-import { isAppForeground, isNative, notify as platformNotify } from "@/lib/platform";
+import { isAppForeground, isNative, notify as platformNotify, pushCoversBackground } from "@/lib/platform";
 
 /**
  * 通知偏好 + 未讀計數 + 事件觸達統一入口。
@@ -31,6 +31,9 @@ export interface NotifyPayload {
   /** 訊息 id:同一則訊息可能由 message.new(會話頻道)與 session.activity(坐席頻道)各到一次,
    *  以此長時間去重,未讀只加一次。 */
   messageId?: string;
+  /** 伺服器對此事件也會推播給我(負責會話的訪客訊息 / 指派給我 / 轉接給我;docs/NATIVE-CLIENTS.md §4.3)。
+   *  Android 已啟用推播且 App 在背景時,改由推播的系統通知提醒,不再彈同一事件的本機通知。 */
+  pushed?: boolean;
 }
 
 interface NotifyState {
@@ -181,8 +184,9 @@ export const useNotify = create<NotifyState>()(
         }
 
         // 4) 系統通知:尊重開關;App 在前景時不彈(未讀徽章 + 音效已足夠)。
+        //    Android 背景且伺服器推播已涵蓋此事件 → 不再彈本機通知(否則同一則訊息兩則通知、震兩次)。
         //    實際彈出仍受權限限制(見 lib/platform 各 adapter)
-        if (get().desktop && !foreground) {
+        if (get().desktop && !foreground && !(payload.pushed && pushCoversBackground())) {
           void platformNotify({ title, body, tag: sessionId ?? kind, sessionId });
         }
       },

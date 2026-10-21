@@ -29,6 +29,7 @@ from app.models.iam import (
     staff_role,
     staff_skillgroup,
 )
+from app.services import presence
 from app.services.iam import (
     VALID_STAFF_STATUS,
     count_query,
@@ -370,7 +371,14 @@ async def set_status(
     if not staff:
         return err("STAFF_NOT_FOUND", "坐席不存在")
     staff.status = body.status
+    # 手動 offline 另記 Redis 標記:DB 上自動離線與手動 offline 同為 'offline',
+    # /ws/agent (重)連時據此不把手動 offline 改回 online。設 offline 先標記再 commit
+    # (避免 commit 後、標記前的重連空窗);設其他狀態於 commit 後清除。Redis 不可用不擋設定。
+    if body.status == "offline":
+        await presence.set_manual_offline(staff_id, True)
     await db.commit()
+    if body.status != "offline":
+        await presence.set_manual_offline(staff_id, False)
     return ok({"id": str(staff_id), "status": staff.status})
 
 

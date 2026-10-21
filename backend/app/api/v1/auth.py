@@ -419,6 +419,18 @@ def _normalize_email(email: str | None) -> str:
     return (email or "").strip().lower()
 
 
+# 時間等化用的假 bcrypt 雜湊(隨機密碼,永遠比對不中)。延遲到第一次需要時才算,
+# 避免 import 期多付一次 bcrypt 成本。
+_DUMMY_PASSWORD_HASH: str | None = None
+
+
+def _dummy_password_hash() -> str:
+    global _DUMMY_PASSWORD_HASH
+    if _DUMMY_PASSWORD_HASH is None:
+        _DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(16))
+    return _DUMMY_PASSWORD_HASH
+
+
 async def _resolve_login_staff(db, body: LoginIn) -> tuple[Staff | None, list[dict]]:
     """定位登入坐席:優先用 2FA challenge(免再送密碼),否則以 email + 密碼逐一比對。
 
@@ -431,6 +443,9 @@ async def _resolve_login_staff(db, body: LoginIn) -> tuple[Staff | None, list[di
     email 僅在租戶內唯一且比對不分大小寫(func.lower 兩側),同一 email 可能存在多個租戶;
     以密碼比對定位,避免 scalar_one_or_none 在多筆時拋 MultipleResultsFound → 500。
     帶 tenant(slug)時只在該租戶內比對。
+
+    時間等化:查無候選列時仍對假雜湊跑一次 bcrypt,讓「email 不存在 / 不屬於指定租戶」
+    與「密碼錯」耗時相近,選填的 tenant 欄位不能被當成租戶成員資格的計時探針。
     """
     if body.challenge:
         payload = _decode_purpose_token(body.challenge, _PURPOSE_2FA)
@@ -457,6 +472,9 @@ async def _resolve_login_staff(db, body: LoginIn) -> tuple[Staff | None, list[di
     if tenant_slug:
         stmt = stmt.where(func.lower(Tenant.slug) == tenant_slug)
     rows = (await db.execute(stmt)).all()
+    if not rows:
+        verify_password(body.password, _dummy_password_hash())  # 時間等化,結果不用
+        return None, []
     matched = [(s, t) for s, t in rows if verify_password(body.password, s.password_hash)]
     if not matched:
         return None, []
@@ -1811,9 +1829,17 @@ async def google_oauth_callback(
     ):
         return _fail("OAUTH_STATE_INVALID")
     if native is None:
-        # Web:query state 必須等於 start 時種在本瀏覽器的 cookie(常數時間比較)
+        # Web:query state 必須等於 start 時種在本瀏覽器的 cookie(常數時間比較)。
+        # 先以格式驗證兩者(伺服器產生的 nonce 只含 base64url 字元),再以 bytes 比較:
+        # hmac.compare_digest 遇到含非 ASCII 的 str 會拋 TypeError → 500,而非導回 OAUTH_STATE_INVALID。
         cookie_state = request.cookies.get(_SSO_STATE_COOKIE) or ""
-        if not state or not cookie_state or not hmac.compare_digest(state, cookie_state):
+        if (
+            not state
+            or not cookie_state
+            or not _SSO_TOKEN_RE.fullmatch(state)
+            or not _SSO_TOKEN_RE.fullmatch(cookie_state)
+            or not hmac.compare_digest(state.encode("ascii"), cookie_state.encode("ascii"))
+        ):
             return _fail("OAUTH_STATE_INVALID")
 
     if error or not code:

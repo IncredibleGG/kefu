@@ -150,12 +150,29 @@ test("sso: sso_error、兌換失敗、逾時", async () => {
   assert.deepEqual(r, { kind: "error", code: "INVALID_CODE_VERIFIER", provider: "google" });
 
   await beginNativeSso("google");
-  const raw = JSON.parse(sessionStorage.getItem("kefu-sso-pending"));
+  const raw = JSON.parse(localStorage.getItem("kefu-sso-pending"));
   raw.at -= 6 * 60_000;
-  sessionStorage.setItem("kefu-sso-pending", JSON.stringify(raw));
+  localStorage.setItem("kefu-sso-pending", JSON.stringify(raw));
   assert.equal(readPendingSso(), null, "超過 5 分鐘即失效");
+  assert.equal(localStorage.getItem("kefu-sso-pending"), null, "逾時即清除暫存");
 
   await assert.rejects(beginNativeSso("saml"), /slug/);
+});
+
+test("sso: App 在瀏覽器登入期間被系統回收(冷啟動)仍可完成兌換", async () => {
+  setNext({ access_token: "tok", is_platform_admin: false });
+  clearPendingSso();
+  await beginNativeSso("google");
+  const saved = localStorage.getItem("kefu-sso-pending");
+  assert.ok(saved, "暫存寫入 localStorage");
+  // 模擬程序被回收:記憶體暫存消失(clearPendingSso 也清掉儲存),再放回只有持久 localStorage 才留得住的紀錄
+  clearPendingSso();
+  localStorage.setItem("kefu-sso-pending", saved);
+  const { state, verifier } = JSON.parse(saved);
+  const r = await resolveNativeSsoCallback(`kefu://auth/callback?code=cold&state=${state}`, { state, code: "cold" });
+  assert.equal(r.kind, "ok");
+  assert.deepEqual(calls.at(-1).opts.body, { code: "cold", code_verifier: verifier });
+  assert.equal(localStorage.getItem("kefu-sso-pending"), null, "verifier 單次使用");
 });
 
 test("sso: 錯誤碼對應友善文字", () => {

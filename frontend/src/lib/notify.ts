@@ -118,3 +118,9 @@ export function stopTitleFlash() {
 export function initTitleBase() {
   if (typeof document !== "undefined") _baseTitle = document.title.replace(/^🔴?\s*(\(\d+\)\s*)?/, "");
 }
+
+/** 更換標題基底並套用(白牌品牌名 / 換伺服器還原預設);閃爍中由下一拍帶上新基底。 */
+export function setTitleBase(title: string) {
+  _baseTitle = title;
+  if (typeof document !== "undefined" && !_flashTimer) document.title = title;
+}

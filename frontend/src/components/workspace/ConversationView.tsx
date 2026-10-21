@@ -33,9 +33,10 @@ import { TransferDialog } from "./TransferDialog";
 import { SessionTags } from "./SessionTags";
 import { SideConversationPanel, MentionInput } from "./SideConversationPanel";
 import { MobileConversationActions, useBackToInbox } from "./MobileConversationActions";
+import { openedFromInbox } from "./ConversationList";
 import { useContextPanelMode, useContextPanelParam } from "./ContextSheet";
 import { COARSE_QUERY, MOBILE_QUERY } from "@/hooks/useMediaQuery";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   useMessages,
   useSendMessage,
@@ -59,6 +60,7 @@ import { apiFetch } from "@/api/client";
 export function ConversationView({ session }: { session: Session }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { data: messages, isLoading } = useMessages(session.id);
   const send = useSendMessage(session.id);
   const flag = useFlagMessage(session.id);
@@ -761,8 +763,10 @@ export function ConversationView({ session }: { session: Session }) {
           if (closeMode === "close") {
             await closeSession.mutateAsync({ category, note, csat });
             setSummaryOpen(false);
-            // replace:返回鍵不會再回到已結束的會話
-            navigate("/workspace", { replace: true });
+            // 由清單點進來 → 退回清單那一筆(不留重複的 /workspace);深連結 / 通知 / 其他頁進來 →
+            // replace 回清單。兩者返回鍵都不會再回到已結束的會話
+            if (openedFromInbox(location.state, location.search)) navigate(-1);
+            else navigate("/workspace", { replace: true });
           } else {
             // 僅記服務小結,不結束會話;成功後關閉對話框、留在此會話。
             await serviceSummary.mutateAsync({ category, note, csat });

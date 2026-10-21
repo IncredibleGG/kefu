@@ -461,6 +461,23 @@ export async function pushRegister(): Promise<{ token: string } | null> {
   }
 }
 
+/** 本機已取得推播 token、成功登記到伺服器且伺服器回報會送推播(usePushRegistration 設定)。 */
+let _pushActive = false;
+
+/** usePushRegistration 用:POST /devices 成功且 push_enabled 時設 true;登出 / 換人 / 卸載時設 false。 */
+export function setPushActive(active: boolean): void {
+  _pushActive = active;
+}
+
+/**
+ * App 在背景時,伺服器推播的系統通知是否已涵蓋「訪客訊息 / 指派 / 轉接給我」。
+ * 僅 Android(FCM 的 notification 訊息在背景由系統直接顯示);iOS 目前收不到 FCM 推播
+ * (見 docs/NATIVE-CLIENTS.md §4.3),桌面 / web 沒有推播,一律 false。
+ */
+export function pushCoversBackground(): boolean {
+  return _pushActive && isMobileApp && os === "android";
+}
+
 /* --------------------------------- 裝置 ID --------------------------------- */
 function randomUuid(): string {
   try {

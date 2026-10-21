@@ -52,7 +52,7 @@ export function getServerBase(): string {
   return (lsGet(STORAGE_KEYS.server) ?? "").replace(/\/+$/, "");
 }
 
-/** 絕對 origin(給人 / 第三方的連結:webhook、嵌入碼、邀請連結…)。
+/** 後端 API 的絕對 origin(給第三方回呼的網址:webhook、Help Center API…)。
  *  web 且 base 為空(同源部署)時 = window.location.origin。 */
 export function getServerOrigin(): string {
   const base = getServerBase();
@@ -61,10 +61,18 @@ export function getServerOrigin(): string {
   return "";
 }
 
-/** 伺服器 host(白牌品牌查詢用;原生殼不可用 window.location.host,那會是 localhost)。 */
+/** 前端頁面的絕對 origin(給人開啟的連結:邀請 / 重設密碼、公開 Help Center、embed.js;白牌網域)。
+ *  web = 目前頁面 origin(VITE_API_BASE 可能指向另一個 API 網域,不可用它);原生殼 = 使用者設定的伺服器
+ *  (App 自己的 tauri:// / capacitor:// origin 不能給人開)。 */
+export function pageOrigin(): string {
+  if (!isNative && typeof window !== "undefined") return window.location.origin;
+  return getServerOrigin();
+}
+
+/** 頁面 host(白牌品牌查詢用;web 為目前頁面 host,原生殼為使用者設定的伺服器,不可用 localhost)。 */
 export function serverHost(): string {
   try {
-    return new URL(getServerOrigin()).host;
+    return new URL(pageOrigin()).host;
   } catch {
     return "";
   }
@@ -312,10 +320,10 @@ export function fileUrl(u?: string | null): string | null {
   return u;
 }
 
-/** 給人 / 第三方的公開網址:getServerOrigin() + path。 */
+/** 給人開啟的公開前端網址:pageOrigin() + path(web 為目前頁面網域,原生殼為伺服器)。 */
 export function publicUrl(path: string): string {
   const p = path.startsWith("/") ? path : `/${path}`;
-  return getServerOrigin() + p;
+  return pageOrigin() + p;
 }
 
 /* ----------------------------------- token ----------------------------------- */

@@ -24,6 +24,7 @@ import { fetchChannelMap, mapSession, type RawPaged, type RawSession } from "@/a
 import { useNotify } from "@/stores/notify";
 import { channelMeta } from "@/lib/channels";
 import { cn, hhmm, initials, fmtDuration } from "@/lib/utils";
+import { routerCanGoBack } from "@/lib/mobile/backButton";
 import type { Session, SessionTab, Tag } from "@/types";
 
 /** 後端會話列摘要:含分流體驗欄位(mapSession 不保留,故直接由原始回應取用並疊加)。 */
@@ -44,6 +45,19 @@ export const SNOOZE_DURATIONS: { minutes: number; key: string; fallback: string 
   { minutes: 180, key: "conv.duration3h", fallback: "3 小時" },
   { minutes: 1440, key: "conv.duration1d", fallback: "1 天" },
 ];
+
+/** 從清單(/workspace,未開會話)點開會話時寫入的 history state:上一筆歷史就是清單。 */
+const FROM_INBOX_KEY = "fromInbox";
+
+/**
+ * 目前這筆歷史是否「由清單點開、且上一筆就是清單」:結束會話時可直接 navigate(-1) 退回,
+ * 不必 replace 成第二筆 /workspace(否則下一次返回看似沒反應)。
+ * 開著 ?panel= 的那筆(push 時會帶上同一個 state)不算,改走 replace。
+ */
+export function openedFromInbox(state: unknown, search: string): boolean {
+  const flag = !!state && typeof state === "object" && (state as Record<string, unknown>)[FROM_INBOX_KEY] === true;
+  return flag && !new URLSearchParams(search).has("panel") && routerCanGoBack() === true;
+}
 
 function invalidateSessionLists(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["sessions-inbox"] });
@@ -338,7 +352,9 @@ export function ConversationList({ covered = false }: { covered?: boolean } = {}
                 <SessionRow
                   session={s}
                   active={s.id === sessionId}
-                  onClick={() => navigate(`/workspace/${s.id}`)}
+                  onClick={() =>
+                    navigate(`/workspace/${s.id}`, sessionId ? undefined : { state: { [FROM_INBOX_KEY]: true } })
+                  }
                   snoozedUntil={s.snoozedUntil}
                 />
                 {/* snooze 控制:overlay 為 row 按鈕的同層兄弟(避免巢狀 button)。

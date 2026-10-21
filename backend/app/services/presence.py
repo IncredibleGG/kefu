@@ -14,6 +14,11 @@
 第一條連線出現才設 online(且僅在目前為 offline 時)、最後一條結束才設 offline
 (且僅在目前為 online 時),手動設的 busy / away 不被覆蓋。
 
+手動 offline:DB 上自動離線與手動 offline 同為 'offline',無從分辨;坐席經
+``PATCH /iam/staff/{id}/status`` 手動設 offline 時另寫 Redis 標記
+``kefu:status:manual-offline:{staff_id}``(設其他狀態即清除),/ws/agent (重)連時
+標記存在就不自動改回 online。標記不設 TTL(語義同「手動狀態」欄位,直到再次手動設定)。
+
 容錯:Redis 不可用時一律 fail-open —— 登記類函式回 ``None``(呼叫端退回舊行為:
 連上即上線、斷線即離線),查詢類回保守值(``is_foreground`` → False、
 ``connection_count`` → 0),絕不向外拋錯。
@@ -33,6 +38,8 @@ from app.services import realtime
 logger = logging.getLogger("kefu.presence")
 
 KEY_PREFIX = "kefu:ws:"
+# 「坐席手動設為 offline」標記(值固定 "1",不設 TTL)
+MANUAL_OFFLINE_PREFIX = "kefu:status:manual-offline:"
 # 連線項目存活時間(秒):WS 端每 KEEPALIVE 刷新一次,遠小於此值
 TTL_SECONDS = 120
 # 「前景」判定視窗(秒):fg=1 且客戶端 seen 在此視窗內
@@ -47,6 +54,11 @@ _MAX_PLATFORM = 32
 def presence_key(staff_id: uuid.UUID | str) -> str:
     """坐席連線登記 hash 的鍵名。"""
     return f"{KEY_PREFIX}{staff_id}"
+
+
+def manual_offline_key(staff_id: uuid.UUID | str) -> str:
+    """「坐席手動設為 offline」標記的鍵名。"""
+    return f"{MANUAL_OFFLINE_PREFIX}{staff_id}"
 
 
 def new_conn_id() -> str:
@@ -222,3 +234,34 @@ async def is_foreground(
         if c.get("fg") in (1, True, "1") and now - seen <= within:
             return True
     return False
+
+
+async def set_manual_offline(staff_id: uuid.UUID | str, manual: bool) -> bool:
+    """記錄(``manual=True``)/ 清除「坐席手動設為 offline」標記;成功回 True。
+
+    由手動設定狀態的端點呼叫:設 offline → 記錄;設其他狀態 → 清除。
+    Redis 不可用時記錄後回 False(不擋狀態設定;之後重連退回「連上即上線」舊行為)。
+    """
+
+    async def _do() -> bool:
+        client = realtime.get_client()
+        key = manual_offline_key(staff_id)
+        if manual:
+            await client.set(key, "1")
+        else:
+            await client.delete(key)
+        return True
+
+    return bool(await _safe(_do(), "manual-offline 標記"))
+
+
+async def is_manual_offline(staff_id: uuid.UUID | str) -> bool:
+    """坐席是否手動設為 offline(/ws/agent 自動上線前查詢)。
+
+    Redis 不可用 / 查詢失敗時回 False(fail-open:退回「連上即上線」舊行為)。
+    """
+
+    async def _do() -> bool:
+        return bool(await realtime.get_client().get(manual_offline_key(staff_id)))
+
+    return bool(await _safe(_do(), "manual-offline 查詢"))

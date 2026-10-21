@@ -9,6 +9,10 @@ on:
     branches: [main]
     paths:
       - 'frontend/**'
+      - '!frontend/src-tauri/**'
+      - '!frontend/android/**'
+      - 'clients/**'
+      - '.github/workflows/ios.yml'
   pull_request:
     paths:
       - 'frontend/**'

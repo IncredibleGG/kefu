@@ -8,6 +8,9 @@
    (僅從 online),手動 busy/away 不被覆蓋;Redis 不可用時 fail-open。
 4. 事件擴充:session.activity、session.assigned(handler_staff_id / actor)、
    handoff(from_staff_id / note),以及附件上傳的 handoff 不再洩漏到訪客會話頻道。
+5. 連線中途撤銷 / token 過期 → 定期重驗以 4401 關閉(DB 故障保守放行)。
+6. 事件轉發(Redis 訂閱)中斷 → close(1011) 讓客戶端重連(/ws/agent 與 /ws/widget)。
+7. 手動 offline 不被 WS (重)連改回 online(Redis 標記);離線 UPDATE 競態補救。
 
 資料庫用 SQLite 檔案(NullPool,跨 TestClient 執行緒安全),Redis 用內建假物件;
 不依賴外部 Postgres / Redis。
@@ -85,14 +88,27 @@ class _NeverPubSub:
 
 
 class FakeRedis:
-    """hash(presence)+ publish 紀錄 + 永不出事件的 pubsub。"""
+    """hash(presence)+ 字串鍵(手動 offline 標記)+ publish 紀錄 + 永不出事件的 pubsub。"""
 
     def __init__(self) -> None:
         self.hashes: dict[str, dict[str, str]] = {}
+        self.store: dict[str, str] = {}
         self.published: list[tuple[str, dict]] = []
 
     def pubsub(self) -> _NeverPubSub:
         return _NeverPubSub()
+
+    async def set(self, key, value, nx=False, ex=None):
+        if nx and key in self.store:
+            return None
+        self.store[key] = value
+        return True
+
+    async def get(self, key):
+        return self.store.get(key)
+
+    async def delete(self, *keys):
+        return sum(1 for k in keys if self.store.pop(k, None) is not None)
 
     async def publish(self, channel: str, data: str) -> int:
         self.published.append((channel, json.loads(data)))
@@ -131,6 +147,41 @@ class RedisDownFake(FakeRedis):
 
     async def hdel(self, *a, **kw):
         raise ConnectionError("redis down")
+
+    async def set(self, *a, **kw):
+        raise ConnectionError("redis down")
+
+    async def get(self, *a, **kw):
+        raise ConnectionError("redis down")
+
+    async def delete(self, *a, **kw):
+        raise ConnectionError("redis down")
+
+
+class _SubscribeFailsPubSub(_NeverPubSub):
+    """Redis 連不上:subscribe 直接失敗(事件轉發任務一啟動就結束)。"""
+
+    async def subscribe(self, *chs: str) -> None:
+        raise ConnectionError("redis down")
+
+
+class _OneEventThenDiesPubSub(_NeverPubSub):
+    """先正常轉發一則事件,之後 Redis 重啟超過重試 → listen 拋錯。"""
+
+    async def listen(self):
+        yield {"type": "message", "data": json.dumps(realtime.make_event("session.opened", {"n": 1}))}
+        raise ConnectionError("redis restarted")
+
+
+class PubSubBrokenFake(FakeRedis):
+    """presence / publish 正常,只有 pubsub 壞掉(依 ``pubsub_cls`` 決定壞法)。"""
+
+    def __init__(self, pubsub_cls) -> None:
+        super().__init__()
+        self._pubsub_cls = pubsub_cls
+
+    def pubsub(self):
+        return self._pubsub_cls()
 
 
 @pytest.fixture
@@ -237,6 +288,88 @@ def _assert_closed_4401(client, url: str) -> None:
     assert exc_info.value.code == 4401
 
 
+def _set_staff(env, staff_id, **values) -> None:
+    async def _do():
+        async with env.maker() as db:
+            row = await db.get(Staff, staff_id)
+            for k, v in values.items():
+                setattr(row, k, v)
+            await db.commit()
+
+    asyncio.run(_do())
+
+
+def _recv_until_closed(ws, timeout: float = 3.0) -> int | None:
+    """持續 ping(主迴圈會回 pong,不會卡死)直到伺服器端關閉連線,回傳 close code;逾時回 None。"""
+    from starlette.websockets import WebSocketDisconnect
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ws.send_json({"type": "ping"})
+        try:
+            ws.receive_json()
+        except WebSocketDisconnect as exc:
+            return exc.code
+        time.sleep(0.02)
+    return None
+
+
+def _receive_with_timeout(ws, timeout: float = 3.0) -> dict:
+    """在背景執行緒 receive(伺服器不回應也不會卡死測試):回 {"msg"} 或 {"exc"},逾時回 {}。"""
+    import threading
+
+    out: dict = {}
+
+    def _run():
+        try:
+            out["msg"] = ws.receive_json()
+        except BaseException as exc:  # noqa: BLE001
+            out["exc"] = exc
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout)
+    return out
+
+
+def _app_client(env):
+    """同時掛 /ws/agent 與 iam REST(手動設狀態)的測試 app,REST 的 get_db 指向測試庫。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.api.v1 import iam as iam_api
+    from app.core.db import get_db
+
+    async def _get_db():
+        async with env.maker() as s:
+            yield s
+
+    app = FastAPI()
+    app.include_router(conv_api.ws_router)
+    app.include_router(iam_api.router, prefix="/api/v1/iam")
+    app.dependency_overrides[get_db] = _get_db
+    return TestClient(app)
+
+
+class _FakeWS:
+    """單元測試用的最小 WebSocket:只記錄 close code 與狀態。"""
+
+    def __init__(self) -> None:
+        from starlette.websockets import WebSocketState
+
+        self._state = WebSocketState
+        self.application_state = WebSocketState.CONNECTED
+        self.closed_with: int | None = None
+        self.sent: list[dict] = []
+
+    async def send_json(self, data):
+        self.sent.append(data)
+
+    async def close(self, code: int = 1000, reason=None):
+        self.closed_with = code
+        self.application_state = self._state.DISCONNECTED
+
+
 # ============================ 1. 認證 / 撤銷 ============================
 
 def test_auth_failures_accept_then_close_4401(fake_redis, db_env):
@@ -287,6 +420,105 @@ def test_platform_admin_allowed_on_suspended_tenant(fake_redis, db_env):
     with client.websocket_connect(f"/ws/agent?token={tok}") as ws:
         ws.send_json({"type": "ping"})
         assert ws.receive_json()["type"] == "pong"
+
+
+@pytest.mark.parametrize(
+    "revoke",
+    [
+        {"staff": {"is_active": False}},
+        {"staff": {"deleted_at": datetime.now(UTC)}},
+        {"tenant": {"is_active": False}},
+    ],
+)
+def test_revoked_mid_connection_closes_4401(fake_redis, db_env, monkeypatch, revoke):
+    """連線已建立後才停用 / 軟刪坐席或停用租戶 → 定期重驗以 4401 關閉,finally 照常清理。"""
+    monkeypatch.setattr(conv_api, "WS_PRESENCE_REFRESH_SECONDS", 0.03)
+    monkeypatch.setattr(conv_api, "WS_AUTH_RECHECK_TICKS", 1)
+    client = _ws_client()
+    w = _seed(db_env)
+    key = presence.presence_key(w.staff_id)
+    with client.websocket_connect(f"/ws/agent?token={_token(w.staff_id, w.tenant_id)}") as ws:
+        ws.send_json({"type": "ping"})
+        assert ws.receive_json()["type"] == "pong"
+        time.sleep(0.15)  # 期間已重驗多次且皆通過 → 連線維持
+        ws.send_json({"type": "ping"})
+        assert ws.receive_json()["type"] == "pong"
+        assert _status(db_env, w.staff_id) == "online"
+
+        if "staff" in revoke:
+            _set_staff(db_env, w.staff_id, **revoke["staff"])
+        else:
+            async def _suspend():
+                async with db_env.maker() as db:
+                    (await db.get(Tenant, w.tenant_id)).is_active = False
+                    await db.commit()
+
+            asyncio.run(_suspend())
+
+        assert _recv_until_closed(ws) == 4401
+        # 關閉後主迴圈結束 → finally 移出 presence 並改回 offline(不必等客戶端離開)
+        assert _wait_until(lambda: key not in fake_redis.hashes)
+        assert _wait_until(lambda: _status(db_env, w.staff_id) == "offline")
+
+
+@pytest.mark.asyncio
+async def test_keepalive_recheck_catches_expired_token(fake_redis, monkeypatch):
+    """token 在連線期間過期(JWT exp)→ 重驗失敗 → close(4401) 並結束 keepalive。"""
+    from jose import jwt
+
+    from app.core.config import settings
+
+    monkeypatch.setattr(conv_api, "WS_PRESENCE_REFRESH_SECONDS", 0.01)
+    monkeypatch.setattr(conv_api, "WS_AUTH_RECHECK_TICKS", 2)
+    expired = jwt.encode(
+        {
+            "sub": str(uuid.uuid4()),
+            "tenant_id": str(uuid.uuid4()),
+            "token_type": "access",
+            "exp": int(time.time()) - 5,
+        },
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    ws = _FakeWS()
+    conn = presence.Connection(staff_id="s-expired")
+    await asyncio.wait_for(conv_api._presence_keepalive(conn, expired, ws, asyncio.Lock()), timeout=2)
+    assert ws.closed_with == 4401
+
+
+@pytest.mark.asyncio
+async def test_keepalive_recheck_db_down_fails_open(fake_redis, monkeypatch):
+    """重驗時 DB 故障 → 與握手 / REST 一致保守放行:連線不關、keepalive 持續運作。"""
+    calls = {"n": 0}
+
+    def _broken_session():
+        calls["n"] += 1
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(conv_api, "SessionLocal", _broken_session)
+    monkeypatch.setattr(conv_api, "WS_PRESENCE_REFRESH_SECONDS", 0.01)
+    monkeypatch.setattr(conv_api, "WS_AUTH_RECHECK_TICKS", 1)
+    ws = _FakeWS()
+    conn = presence.Connection(staff_id=str(uuid.uuid4()))
+    tok = _token(conn.staff_id, uuid.uuid4())
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(conv_api._presence_keepalive(conn, tok, ws, asyncio.Lock()), timeout=0.2)
+    assert calls["n"] >= 2  # 確實重驗了多次
+    assert ws.closed_with is None
+
+
+@pytest.mark.asyncio
+async def test_keepalive_without_ws_only_refreshes(fake_redis, monkeypatch):
+    """未帶 ws(舊呼叫方式)→ 只刷新登記,不做重驗。"""
+    async def _never(*a, **kw):  # pragma: no cover - 不應被呼叫
+        raise AssertionError("不應重驗")
+
+    monkeypatch.setattr(conv_api, "_authenticate_agent_ws", _never)
+    monkeypatch.setattr(conv_api, "WS_PRESENCE_REFRESH_SECONDS", 0.01)
+    conn = presence.Connection(staff_id="s-legacy")
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(conv_api._presence_keepalive(conn), timeout=0.1)
+    assert presence.presence_key("s-legacy") in fake_redis.hashes
 
 
 # ============================ 2. 心跳 / app_state / 登記 ============================
@@ -429,7 +661,279 @@ async def test_offline_grace_period_skips_reconnect(fake_redis, monkeypatch):
     assert calls == [("offline", "online")]
 
 
-# ============================ 3. 事件擴充 ============================
+# ---------------- 離線 UPDATE 競態補救 ----------------
+
+def _race_recorder(calls: list, *, appear: presence.Connection | None, changed: bool = True):
+    """假 _set_staff_presence:offline UPDATE 執行「期間」讓 ``appear`` 連線登記(模擬新連線的
+    offline→online UPDATE 先執行而落空),回傳 ``changed``(是否確實改到列)。"""
+
+    async def _record(staff_id, tenant_id, status, *, only_from=None):
+        calls.append((status, only_from))
+        if status == "offline" and appear is not None:
+            await presence.register(appear)
+        return changed
+
+    return _record
+
+
+@pytest.mark.asyncio
+async def test_offline_update_race_restores_online(fake_redis, monkeypatch):
+    monkeypatch.setattr(conv_api, "WS_OFFLINE_GRACE_SECONDS", 0)
+    calls: list[tuple] = []
+    b = presence.Connection(staff_id="s-race")
+    monkeypatch.setattr(conv_api, "_set_staff_presence", _race_recorder(calls, appear=b))
+    a = presence.Connection(staff_id="s-race")
+    await presence.register(a)
+    await conv_api._presence_disconnected(a, uuid.uuid4())
+    # 先改 offline,改完再查連線數發現 B → 改回 online(僅從 offline)
+    assert calls == [("offline", "online"), ("online", "offline")]
+
+
+@pytest.mark.asyncio
+async def test_offline_update_no_race_no_restore(fake_redis, monkeypatch):
+    monkeypatch.setattr(conv_api, "WS_OFFLINE_GRACE_SECONDS", 0)
+    calls: list[tuple] = []
+    monkeypatch.setattr(conv_api, "_set_staff_presence", _race_recorder(calls, appear=None))
+    a = presence.Connection(staff_id="s-norace")
+    await presence.register(a)
+    await conv_api._presence_disconnected(a, uuid.uuid4())
+    assert calls == [("offline", "online")]
+
+
+@pytest.mark.asyncio
+async def test_offline_update_race_skips_restore_when_not_changed_or_manual(fake_redis, monkeypatch):
+    monkeypatch.setattr(conv_api, "WS_OFFLINE_GRACE_SECONDS", 0)
+    # offline UPDATE 沒改到列(本來就是 busy/away/offline)→ 不補救,避免覆蓋手動狀態
+    calls: list[tuple] = []
+    b = presence.Connection(staff_id="s-race2")
+    monkeypatch.setattr(conv_api, "_set_staff_presence", _race_recorder(calls, appear=b, changed=False))
+    a = presence.Connection(staff_id="s-race2")
+    await presence.register(a)
+    await conv_api._presence_disconnected(a, uuid.uuid4())
+    assert calls == [("offline", "online")]
+
+    # 有手動 offline 標記 → 補救也不改回 online
+    calls.clear()
+    c = presence.Connection(staff_id="s-race3")
+    monkeypatch.setattr(conv_api, "_set_staff_presence", _race_recorder(calls, appear=c))
+    await presence.set_manual_offline("s-race3", True)
+    a3 = presence.Connection(staff_id="s-race3")
+    await presence.register(a3)
+    await conv_api._presence_disconnected(a3, uuid.uuid4())
+    assert calls == [("offline", "online")]
+
+
+def test_set_staff_presence_reports_changed_rows(fake_redis, db_env):
+    w = _seed(db_env, status="online")
+
+    async def _do():
+        first = await conv_api._set_staff_presence(w.staff_id, w.tenant_id, "offline", only_from="online")
+        second = await conv_api._set_staff_presence(w.staff_id, w.tenant_id, "offline", only_from="online")
+        return first, second
+
+    assert asyncio.run(_do()) == (True, False)
+    assert _status(db_env, w.staff_id) == "offline"
+
+
+# ---------------- 手動 offline 不被 (重)連覆蓋 ----------------
+
+@pytest.mark.asyncio
+async def test_manual_offline_marker_roundtrip(fake_redis):
+    sid = uuid.uuid4()
+    assert await presence.is_manual_offline(sid) is False
+    assert await presence.set_manual_offline(sid, True) is True
+    assert fake_redis.store[presence.manual_offline_key(sid)] == "1"
+    assert await presence.is_manual_offline(sid) is True
+    assert await presence.set_manual_offline(sid, False) is True
+    assert await presence.is_manual_offline(sid) is False
+    assert presence.manual_offline_key(sid) not in fake_redis.store
+
+
+@pytest.mark.asyncio
+async def test_manual_offline_marker_redis_down_fails_open():
+    realtime.set_client(RedisDownFake())
+    try:
+        # 不拋錯;查不到標記 → False(退回「連上即上線」舊行為)
+        assert await presence.set_manual_offline(uuid.uuid4(), True) is False
+        assert await presence.is_manual_offline(uuid.uuid4()) is False
+    finally:
+        realtime.set_client(None)
+
+
+def test_manual_offline_survives_reconnect(fake_redis, db_env):
+    """在線時手動設 offline → 之後任何 WS 重連(切換會話 / 網路閃斷 / App 回前景)都維持 offline;
+    手動改回其他狀態即清除標記,自動上下線恢復。"""
+    client = _app_client(db_env)
+    w = _seed(db_env)  # 初始自動 offline
+    tok = _token(w.staff_id, w.tenant_id)
+    headers = {"Authorization": f"Bearer {tok}"}
+    status_url = f"/api/v1/iam/staff/{w.staff_id}/status"
+    ws_url = f"/ws/agent?token={tok}"
+    key = presence.presence_key(w.staff_id)
+    marker = presence.manual_offline_key(w.staff_id)
+
+    with client.websocket_connect(ws_url) as ws:
+        ws.send_json({"type": "ping"})
+        ws.receive_json()
+        assert _status(db_env, w.staff_id) == "online"  # 自動上線照舊
+        r = client.patch(status_url, json={"status": "offline"}, headers=headers)
+        assert r.json()["ok"] is True and r.json()["data"]["status"] == "offline"  # API 不變
+        assert _status(db_env, w.staff_id) == "offline"
+        assert fake_redis.store.get(marker) == "1"
+        ws.close()
+        assert _wait_until(lambda: key not in fake_redis.hashes)
+
+    # 重連:第一條連線出現,但手動 offline → 不改回 online
+    with client.websocket_connect(ws_url) as ws:
+        ws.send_json({"type": "ping"})
+        ws.receive_json()
+        assert _status(db_env, w.staff_id) == "offline"
+        # 手動改回 online → 清除標記
+        r = client.patch(status_url, json={"status": "online"}, headers=headers)
+        assert r.json()["ok"] is True
+        assert marker not in fake_redis.store
+        ws.close()
+        assert _wait_until(lambda: _status(db_env, w.staff_id) == "offline")  # 自動離線恢復
+
+    with client.websocket_connect(ws_url) as ws:
+        ws.send_json({"type": "ping"})
+        ws.receive_json()
+        assert _status(db_env, w.staff_id) == "online"  # 自動上線恢復
+        ws.close()
+        assert _wait_until(lambda: _status(db_env, w.staff_id) == "offline")
+
+
+def test_manual_status_endpoint_works_when_redis_down(db_env):
+    """Redis 不可用:手動設狀態照常成功(標記寫不進去只記錄,不擋設定)。"""
+    realtime.set_client(RedisDownFake())
+    try:
+        client = _app_client(db_env)
+        w = _seed(db_env, status="online")
+        headers = {"Authorization": f"Bearer {_token(w.staff_id, w.tenant_id)}"}
+        for st in ("offline", "busy"):
+            r = client.patch(f"/api/v1/iam/staff/{w.staff_id}/status", json={"status": st}, headers=headers)
+            assert r.json()["ok"] is True
+            assert _status(db_env, w.staff_id) == st
+    finally:
+        realtime.set_client(None)
+
+
+# ============================ 3. 事件轉發中斷 → 1011 ============================
+
+def test_pump_subscribe_failure_closes_1011(db_env, monkeypatch):
+    """Redis 連不上(subscribe 失敗)→ 不留下只會回 pong 的殭屍連線:close(1011) 讓客戶端重連。"""
+    monkeypatch.setattr(conv_api, "WS_PUMP_FAILURE_MIN_LIFETIME_SECONDS", 0)
+    fake = PubSubBrokenFake(_SubscribeFailsPubSub)
+    realtime.set_client(fake)
+    try:
+        client = _ws_client()
+        w = _seed(db_env)
+        key = presence.presence_key(w.staff_id)
+        with client.websocket_connect(f"/ws/agent?token={_token(w.staff_id, w.tenant_id)}") as ws:
+            assert _recv_until_closed(ws) == 1011
+            # 既有 finally 照常清理
+            assert _wait_until(lambda: key not in fake.hashes)
+            assert _wait_until(lambda: _status(db_env, w.staff_id) == "offline")
+    finally:
+        realtime.set_client(None)
+
+
+def test_pump_dies_mid_stream_closes_1011(db_env, monkeypatch):
+    """轉發中途 Redis 中斷(listen 拋錯)→ 已轉發的事件照收,之後 close(1011)。"""
+    monkeypatch.setattr(conv_api, "WS_PUMP_FAILURE_MIN_LIFETIME_SECONDS", 0)
+    realtime.set_client(PubSubBrokenFake(_OneEventThenDiesPubSub))
+    try:
+        client = _ws_client()
+        w = _seed(db_env)
+        with client.websocket_connect(f"/ws/agent?token={_token(w.staff_id, w.tenant_id)}") as ws:
+            first = _receive_with_timeout(ws)
+            assert first.get("msg", {}).get("type") == "session.opened"
+            assert _recv_until_closed(ws) == 1011
+    finally:
+        realtime.set_client(None)
+
+
+def test_widget_pump_failure_closes_1011(db_env, monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+
+    monkeypatch.setattr(conv_api, "WS_PUMP_FAILURE_MIN_LIFETIME_SECONDS", 0)
+    realtime.set_client(PubSubBrokenFake(_SubscribeFailsPubSub))
+    try:
+        client = _ws_client()
+        w = _seed(db_env)
+        url = f"/ws/widget?tenant_id={w.tenant_id}&session_id={w.session_id}&visitor_external_id=v1"
+        with client.websocket_connect(url) as ws:
+            got = _receive_with_timeout(ws)
+            assert isinstance(got.get("exc"), WebSocketDisconnect)
+            assert got["exc"].code == 1011
+    finally:
+        realtime.set_client(None)
+
+
+@pytest.mark.asyncio
+async def test_forward_events_close_rules(monkeypatch):
+    """取消 → 不關閉;對端斷線 → 不關閉;其他例外 / 正常結束 → 1011;過早失敗至少維持最短存活時間。"""
+    from fastapi import WebSocketDisconnect
+
+    monkeypatch.setattr(conv_api, "WS_PUMP_FAILURE_MIN_LIFETIME_SECONDS", 0)
+
+    async def _hang(*a):
+        await asyncio.Event().wait()
+
+    ws = _FakeWS()
+    monkeypatch.setattr(conv_api, "_pump", _hang)
+    task = asyncio.create_task(conv_api._forward_events(ws, ["c"], asyncio.Lock()))
+    await asyncio.sleep(0.01)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert ws.closed_with is None
+
+    async def _peer_gone(*a):
+        raise WebSocketDisconnect(code=1006)
+
+    monkeypatch.setattr(conv_api, "_pump", _peer_gone)
+    await conv_api._forward_events(ws, ["c"])
+    assert ws.closed_with is None
+
+    async def _ended(*a):
+        return None
+
+    monkeypatch.setattr(conv_api, "_pump", _ended)
+    await conv_api._forward_events(ws, ["c"])
+    assert ws.closed_with == 1011
+
+    async def _boom(*a):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr(conv_api, "WS_PUMP_FAILURE_MIN_LIFETIME_SECONDS", 0.15)
+    monkeypatch.setattr(conv_api, "_pump", _boom)
+    ws2 = _FakeWS()
+    started = time.monotonic()
+    await conv_api._forward_events(ws2, ["c"], asyncio.Lock())
+    assert ws2.closed_with == 1011
+    assert time.monotonic() - started >= 0.14  # 避免 Redis 持續不可用時的重連風暴
+
+    # 已由伺服器端關閉(例如撤銷 4401)→ 不重複關閉、不覆寫 close code
+    ws3 = _FakeWS()
+    await ws3.close(code=4401)
+    monkeypatch.setattr(conv_api, "WS_PUMP_FAILURE_MIN_LIFETIME_SECONDS", 0)
+    await conv_api._forward_events(ws3, ["c"])
+    assert ws3.closed_with == 4401
+
+
+@pytest.mark.asyncio
+async def test_ws_send_skips_after_server_close():
+    ws = _FakeWS()
+    assert await conv_api._ws_send(ws, {"type": "x"}, asyncio.Lock()) is True
+    await conv_api._close_ws(ws, 4401, asyncio.Lock())
+    assert await conv_api._ws_send(ws, {"type": "y"}) is False
+    await conv_api._close_ws(ws, 1011)  # 已關閉 → 略過,不拋錯
+    assert ws.closed_with == 4401
+    assert ws.sent == [{"type": "x"}]
+
+
+# ============================ 4. 事件擴充 ============================
 
 @pytest.fixture
 def mem_db(fake_redis, monkeypatch):

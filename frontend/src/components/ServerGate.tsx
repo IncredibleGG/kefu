@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { isNative, onDeepLink } from "@/lib/platform";
+import { setBackOverride } from "@/lib/mobile/backButton";
 import {
   getServerBase,
   hasServer,
@@ -83,7 +84,20 @@ export function ServerGate({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  if (isNative && (!ready || setupOpen)) {
+  const showSetup = isNative && (!ready || setupOpen);
+
+  // 設定頁蓋住 RouterProvider 時,Android 返回鍵不可移動隱藏中的 router(畫面不會變):
+  // 可取消(已有伺服器)→ 關閉設定頁回到原畫面;否則縮小 App。
+  useEffect(() => {
+    if (!showSetup) return;
+    return setBackOverride(() => {
+      if (!ready) return false;
+      setSetupOpen(false);
+      return true;
+    });
+  }, [showSetup, ready]);
+
+  if (showSetup) {
     return (
       <ServerSetupPage
         key={prefill ?? "default"}

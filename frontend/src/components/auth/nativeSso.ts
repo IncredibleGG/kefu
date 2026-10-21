@@ -1,15 +1,16 @@
 /** ============================================================
  *  原生 SSO(PKCE)流程(docs/NATIVE-CLIENTS.md §4.1)。Web 的 SSO 不經過這裡(維持整頁導向 + #sso_token)。
  *
- *  1. beginNativeSso():產生 verifier / S256 challenge / state,暫存 sessionStorage(5 分鐘),
+ *  1. beginNativeSso():產生 verifier / S256 challenge / state,暫存 localStorage(5 分鐘),
  *     以系統瀏覽器開啟 {server}/api/v1/auth/oauth/google/start(SAML:/api/v1/saml/login/{slug})
  *     ?client=native&redirect_uri=kefu://auth/callback&state&code_challenge&code_challenge_method=S256。
  *  2. 後端完成後 302 回 kefu://auth/callback?code&state(或 ?sso_error&state),由 platform.onDeepLink 收到。
  *  3. resolveNativeSsoCallback():比對 state 與伺服器 → 取出 verifier(單次使用)→
  *     POST /api/v1/auth/sso/exchange {code, code_verifier} → 呼叫端以 finalizeSession 完成登入。
  *
- *  安全:verifier 只存在本機 sessionStorage,不進網址、不寫日誌;state 不符時不兌換也不清掉暫存
- *  (避免偽造連結打斷正在進行的正常流程)。code / token 一律不 console 輸出。
+ *  安全:verifier 只存在本機 localStorage(App 在系統瀏覽器登入期間被系統回收、冷啟動收到回呼時仍讀得到;
+ *  sessionStorage / 記憶體會隨程序消失),5 分鐘逾時、用過 / 逾時 / 開瀏覽器失敗即清除;不進網址、不寫日誌。
+ *  state 不符時不兌換也不清掉暫存(避免偽造連結打斷正在進行的正常流程)。code / token 一律不 console 輸出。
  *  ============================================================ */
 import type { TFunction } from "i18next";
 import { platform, startExternalAuth } from "@/lib/platform";
@@ -35,34 +36,34 @@ interface PendingSso {
   at: number;
 }
 
-function ssGet(): string | null {
+function lsGet(): string | null {
   try {
-    return sessionStorage.getItem(PENDING_KEY);
+    return localStorage.getItem(PENDING_KEY);
   } catch {
     return null;
   }
 }
-function ssSet(v: string | null): void {
+function lsSet(v: string | null): void {
   try {
-    if (v == null) sessionStorage.removeItem(PENDING_KEY);
-    else sessionStorage.setItem(PENDING_KEY, v);
+    if (v == null) localStorage.removeItem(PENDING_KEY);
+    else localStorage.setItem(PENDING_KEY, v);
   } catch {
-    /* sessionStorage 不可用:流程仍可在同一個頁面生命週期內以記憶體完成 */
+    /* localStorage 不可用:流程仍可在同一個頁面生命週期內以記憶體完成 */
   }
 }
 
-/** sessionStorage 不可用時的記憶體後備。 */
+/** localStorage 不可用時的記憶體後備。 */
 let memPending: PendingSso | null = null;
 
 function savePending(p: PendingSso): void {
   memPending = p;
-  ssSet(JSON.stringify(p));
+  lsSet(JSON.stringify(p));
 }
 
 /** 讀取尚未過期的暫存;過期即清除。 */
 export function readPendingSso(): PendingSso | null {
   let p: PendingSso | null = null;
-  const raw = ssGet();
+  const raw = lsGet();
   if (raw) {
     try {
       const v = JSON.parse(raw) as PendingSso;
@@ -82,7 +83,7 @@ export function readPendingSso(): PendingSso | null {
 
 export function clearPendingSso(): void {
   memPending = null;
-  ssSet(null);
+  lsSet(null);
 }
 
 /** 組 SSO 起點網址(伺服器 base + 路徑 + PKCE 參數)。 */

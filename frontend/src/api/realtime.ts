@@ -169,7 +169,17 @@ export class AgentSocket {
       const ws = this.ws;
       this.pongTimer = setTimeout(() => {
         this.pongTimer = null;
-        if (this.ws === ws && ws.readyState === WebSocket.OPEN) ws.close(); // → onclose → 退避重連
+        if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+        // 半開連線收不到伺服器的 close frame,onclose 可能要等瀏覽器 closing 逾時(約 60 秒)才觸發:
+        // 先解除參照(之後該 socket 的 onclose / onmessage 皆被 this.ws !== ws 忽略)再直接走斷線重連。
+        this.stopHeartbeat();
+        this.ws = null;
+        try {
+          ws.close();
+        } catch {
+          /* 忽略 */
+        }
+        this.onDrop();
       }, PONG_TIMEOUT_MS);
     }
   }

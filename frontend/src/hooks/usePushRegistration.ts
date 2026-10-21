@@ -10,6 +10,7 @@ import {
   os,
   osVersion,
   pushRegister,
+  setPushActive,
 } from "@/lib/platform";
 import i18n from "@/lib/i18n";
 
@@ -39,7 +40,7 @@ export function usePushRegistration(): void {
       const res = await pushRegister();
       if (!res?.token || cancelled) return;
       try {
-        await apiFetch<{ id: string; push_enabled: boolean }>("/api/v1/devices", {
+        const dev = await apiFetch<{ id: string; push_enabled: boolean }>("/api/v1/devices", {
           method: "POST",
           body: {
             token: res.token,
@@ -51,12 +52,15 @@ export function usePushRegistration(): void {
           },
         });
         markDeviceRegistered();
+        // 伺服器確定會推播 → 背景時由推播提醒(stores/notify 據此避免同一事件再彈本機通知)
+        if (!cancelled) setPushActive(dev?.push_enabled === true);
       } catch {
         /* 忽略:舊版伺服器 / 網路錯誤;下次登入再試 */
       }
     })();
     return () => {
       cancelled = true;
+      setPushActive(false);
     };
   }, [token, staffId]);
 }

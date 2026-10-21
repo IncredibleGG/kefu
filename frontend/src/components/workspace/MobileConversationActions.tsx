@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -22,21 +22,22 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { conversationApi, visitorApi } from "@/api/endpoints";
 import { cn, hhmm } from "@/lib/utils";
+import { routerCanGoBack } from "@/lib/mobile/backButton";
 import type { Tag } from "@/types";
 import { sessionTagsKey } from "./SessionTags";
 import { SNOOZE_DURATIONS, findInboxSnoozedUntil, snoozeSession, unsnoozeSession } from "./ConversationList";
 
 /**
  * 手機對話頁的「← 返回」:App 內有上一頁時 navigate(-1)(與 Android 返回鍵一致),
- * 冷啟動直接進對話(例如點推播)時沒有上一頁 → replace 回會話清單,不留下已離開的會話。
+ * 沒有上一頁(冷啟動 / 新分頁直接進對話、登入後 replace 回深連結)→ replace 回會話清單,不留下已離開的會話。
+ * 以 react-router 的 history.state.idx 判斷(location.key 在 replace 後也不是 "default",不可靠)。
  */
 export function useBackToInbox(): () => void {
   const navigate = useNavigate();
-  const location = useLocation();
   return useCallback(() => {
-    if (location.key !== "default") navigate(-1);
+    if (routerCanGoBack()) navigate(-1);
     else navigate("/workspace", { replace: true });
-  }, [navigate, location.key]);
+  }, [navigate]);
 }
 
 export interface MobileConversationActionsProps {

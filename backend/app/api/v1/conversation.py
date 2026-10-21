@@ -9,14 +9,17 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from sqlalchemy import String, cast, exists, func, or_, select
+from starlette.websockets import WebSocketState
 
 from app.core.db import SessionLocal
 from app.core.deps import CurrentStaff, DbSession
@@ -1457,22 +1460,77 @@ async def unsnooze_session(
 WS_OFFLINE_GRACE_SECONDS = 3.0
 # 伺服器端定期刷新連線登記的間隔(秒);須遠小於 presence.TTL_SECONDS。
 WS_PRESENCE_REFRESH_SECONDS = 30.0
+# 連線存活期間每隔幾次刷新(即 N × WS_PRESENCE_REFRESH_SECONDS 秒)重跑一次認證 / 撤銷檢查;
+# 0 = 停用。預設 2 → 約每 60 秒查一次 DB,撤銷最多延遲一分鐘生效。
+WS_AUTH_RECHECK_TICKS = 2
 # 認證失敗的 close code(先 accept 再 close,客戶端才看得到原因,據此導回登入頁)
 WS_CLOSE_UNAUTHORIZED = 4401
+# 事件轉發非因取消而結束(訂閱失敗 / Redis 中斷超過重試)時的 close code:
+# 1011 = 伺服器內部錯誤,客戶端走一般斷線退避重連、重新訂閱。
+WS_CLOSE_PUMP_FAILED = 1011
+# 事件轉發中斷時連線至少維持幾秒才關閉:Redis 持續不可用時,避免客戶端「連上即被關 →
+# 立刻重連」的重連風暴(每次重連都打 DB)。測試可調為 0。
+WS_PUMP_FAILURE_MIN_LIFETIME_SECONDS = 5.0
+
+
+def _ws_lock(lock: asyncio.Lock | None):
+    return lock if lock is not None else contextlib.nullcontext()
+
+
+async def _ws_send(ws: WebSocket, event: dict, lock: asyncio.Lock | None = None) -> bool:
+    """送出一則封包;伺服器端已主動關閉連線(撤銷 / 轉發中斷)則略過並回 False,
+    避免 close 之後再 send 拋 RuntimeError。"""
+    async with _ws_lock(lock):
+        if ws.application_state != WebSocketState.CONNECTED:
+            return False
+        await ws.send_json(event)
+        return True
+
+
+async def _close_ws(ws: WebSocket, code: int, lock: asyncio.Lock | None = None) -> None:
+    """伺服器端主動關閉連線(與其他送出端以同一把鎖序列化);已關閉 / 對端已斷則略過,絕不拋錯。
+
+    關閉後主迴圈 pending 的 ``receive_*`` 會收到斷線(WebSocketDisconnect),既有 finally 照常清理。
+    """
+    try:
+        async with _ws_lock(lock):
+            if ws.application_state == WebSocketState.CONNECTED:
+                await ws.close(code=code)
+    except Exception:
+        logger.debug("關閉 WebSocket 失敗(對端可能已斷線)code=%s", code, exc_info=True)
 
 
 async def _pump(ws: WebSocket, channels: list[str], lock: asyncio.Lock | None = None) -> None:
-    """訂閱頻道並把事件轉發到 WebSocket 連線,直到對端斷線。
+    """訂閱頻道並把事件轉發到 WebSocket 連線,直到對端斷線 / 伺服器端關閉連線。
 
     ``lock``:同一連線若另有送出端(如 pong 回覆),以同一把鎖序列化寫入。
     """
     async with realtime.subscribe(channels) as events:
         async for event in events:
-            if lock is None:
-                await ws.send_json(event)
-            else:
-                async with lock:
-                    await ws.send_json(event)
+            if not await _ws_send(ws, event, lock):
+                return  # 伺服器端已關閉連線(撤銷等):停止轉發
+
+
+async def _forward_events(ws: WebSocket, channels: list[str], lock: asyncio.Lock | None = None) -> None:
+    """事件轉發任務:``_pump`` 非因取消而結束(Redis 連不上導致訂閱失敗、Redis 重啟超過
+    redis-py 重試、迭代意外結束)即以 1011 關閉連線,讓客戶端走 onclose 退避重連、重新訂閱。
+
+    否則主迴圈仍照常回 pong,客戶端心跳以為連線健康而永不重連,卻再也收不到任何事件。
+    被取消(連線正常結束時 finally 取消本任務)不關閉;對端已斷線也不重複關閉。
+    """
+    started = time.monotonic()
+    try:
+        await _pump(ws, channels, lock)
+    except WebSocketDisconnect:
+        return  # 對端已斷線:交由主迴圈 finally 清理
+    except Exception:
+        logger.warning("WS 事件轉發中斷,關閉連線讓客戶端重連 channels=%s", channels, exc_info=True)
+    if ws.application_state != WebSocketState.CONNECTED:
+        return
+    wait = WS_PUMP_FAILURE_MIN_LIFETIME_SECONDS - (time.monotonic() - started)
+    if wait > 0:
+        await asyncio.sleep(wait)
+    await _close_ws(ws, WS_CLOSE_PUMP_FAILED, lock)
 
 
 async def _authenticate_agent_ws(token: str | None) -> tuple[uuid.UUID, uuid.UUID] | None:
@@ -1534,19 +1592,20 @@ async def _authenticate_agent_ws(token: str | None) -> tuple[uuid.UUID, uuid.UUI
 
 async def _set_staff_presence(
     staff_id, tenant_id, status: str, *, only_from: str | None = None
-) -> None:
+) -> bool:
     """更新坐席 last-known presence(供智慧路由挑選在線坐席)。失敗只記錄不拋。
 
     ``only_from``:僅在目前狀態等於此值時才改(條件式 UPDATE,原子、無讀改寫競態),
     用來保證「手動設的 busy / away 不被自動上下線覆蓋」。
+    回傳是否確實改到一列(條件不符 / 失敗 → False),供競態補救判斷。
     """
     if not staff_id:
-        return
+        return False
     try:
         sid = uuid.UUID(str(staff_id))
         tid = uuid.UUID(str(tenant_id))
     except (ValueError, TypeError):
-        return
+        return False
     try:
         from sqlalchemy import update
 
@@ -1556,17 +1615,57 @@ async def _set_staff_presence(
         if only_from is not None:
             stmt = stmt.where(Staff.status == only_from)
         async with SessionLocal() as db:
-            await db.execute(stmt.values(status=status))
+            result = await db.execute(stmt.values(status=status))
             await db.commit()
+        return (result.rowcount or 0) > 0
     except Exception:
         logger.warning("更新坐席 presence 失敗 staff=%s status=%s", staff_id, status, exc_info=True)
+        return False
 
 
-async def _presence_keepalive(conn: presence.Connection) -> None:
-    """連線存活期間定期刷新登記(不更新客戶端 seen),避免舊版不送 ping 的客戶端被當成殘留。"""
+async def _auto_online(staff_id, tenant_id) -> bool:
+    """自動上線:僅從 offline 改 online;坐席**手動**設為 offline(presence 的 Redis 標記)時不改。
+
+    DB 上自動離線與手動 offline 同為 'offline',靠標記區分;Redis 不可用時標記查不到 →
+    fail-open 退回舊行為(連上即上線)。回傳是否確實改為 online。
+    """
+    if await presence.is_manual_offline(staff_id):
+        return False
+    return await _set_staff_presence(staff_id, tenant_id, "online", only_from="offline")
+
+
+async def _presence_keepalive(
+    conn: presence.Connection,
+    token: str | None = None,
+    ws: WebSocket | None = None,
+    lock: asyncio.Lock | None = None,
+) -> None:
+    """連線存活期間定期刷新登記(不更新客戶端 seen),避免舊版不送 ping 的客戶端被當成殘留。
+
+    帶 ``ws`` 時另每 ``WS_AUTH_RECHECK_TICKS`` 次刷新重跑一次握手時的認證 / 即時撤銷檢查
+    (``_authenticate_agent_ws``,含 JWT exp):坐席被停用 / 軟刪、租戶被停用或 token 過期 →
+    以 4401 關閉連線(客戶端據此走登出流程),避免已撤銷的帳號持續收到整個租戶的坐席事件。
+    關閉後主迴圈的 receive 會收到斷線,既有 finally 照常取消任務並清理 presence。
+    DB 故障無法判定時與握手 / REST 一致:保守放行(連線維持)。
+    """
+    ticks = 0
     while True:
         await asyncio.sleep(WS_PRESENCE_REFRESH_SECONDS)
         await presence.touch(conn, client_seen=False)
+        if ws is None or WS_AUTH_RECHECK_TICKS <= 0:
+            continue
+        ticks += 1
+        if ticks % WS_AUTH_RECHECK_TICKS:
+            continue
+        try:
+            auth = await _authenticate_agent_ws(token)
+        except Exception:  # 重驗本身出錯:保守放行,下次再驗
+            logger.warning("/ws/agent 連線中重驗失敗,保守放行 staff=%s", conn.staff_id, exc_info=True)
+            continue
+        if auth is None:
+            logger.info("/ws/agent 連線中帳號已撤銷或 token 過期,關閉連線 staff=%s", conn.staff_id)
+            await _close_ws(ws, WS_CLOSE_UNAUTHORIZED, lock)
+            return
 
 
 async def _presence_disconnected(conn: presence.Connection, tenant_id: uuid.UUID) -> None:
@@ -1580,7 +1679,13 @@ async def _presence_disconnected(conn: presence.Connection, tenant_id: uuid.UUID
         if await presence.connection_count(conn.staff_id) > 0:
             return
     # remaining is None(Redis 不可用)→ 退回舊行為:斷線即離線(仍不覆蓋手動 busy/away)
-    await _set_staff_presence(conn.staff_id, tenant_id, "offline", only_from="online")
+    changed = await _set_staff_presence(conn.staff_id, tenant_id, "offline", only_from="online")
+    # 競態補救:上面的連線數檢查與 offline UPDATE 之間若有新連線登記,它的
+    # 「offline→online」條件式 UPDATE 可能先執行而落空(當時仍是 online),本次 UPDATE
+    # 再把列改成 offline → 坐席連著卻被路由略過。新連線一律「先登記 Redis 再 UPDATE」,
+    # 故改完後再查一次連線數:有連線就改回 online(仍尊重手動 offline 標記)。
+    if changed and remaining == 0 and await presence.connection_count(conn.staff_id) > 0:
+        await _auto_online(conn.staff_id, tenant_id)
 
 
 @ws_router.websocket("/ws/agent")
@@ -1596,7 +1701,9 @@ async def ws_agent(
     連線以 query 參數 ``token`` 帶 JWT(瀏覽器 WS 無法自訂 header);``device_id`` /
     ``platform`` 選填,用於連線登記(presence)。推送封包 ``{type,payload,ts}``。
 
-    認證失敗(token 無效/過期、帳號停用/刪除、租戶停用)→ 先 accept 再 ``close(4401)``。
+    認證失敗(token 無效/過期、帳號停用/刪除、租戶停用)→ 先 accept 再 ``close(4401)``;
+    連線期間亦定期重驗(見 ``_presence_keepalive``),中途撤銷 / 過期同樣 ``close(4401)``。
+    事件轉發(Redis 訂閱)中斷 → ``close(1011)``,客戶端退避重連後重新訂閱。
 
     客戶端控制封包:
     - ``{"type":"ping"}`` → 回 ``{"type":"pong","payload":{},"ts":…}``,並刷新連線登記;
@@ -1617,7 +1724,7 @@ async def ws_agent(
         channels.append(realtime.session_channel(tenant_id, session_id))
 
     await ws.accept()
-    # 連線登記:第一條連線出現才把 offline 改為 online(手動 busy/away 不覆蓋);
+    # 連線登記:第一條連線出現才把 offline 改為 online(手動 busy/away/offline 不覆蓋);
     # Redis 不可用(None)時退回舊行為:連上即上線。
     conn = presence.Connection(
         staff_id=staff_id,
@@ -1626,14 +1733,15 @@ async def ws_agent(
     )
     before = await presence.register(conn)
     if not before:
-        await _set_staff_presence(staff_id, tenant_id, "online", only_from="offline")
+        await _auto_online(staff_id, tenant_id)
 
     send_lock = asyncio.Lock()
-    forward = asyncio.create_task(_pump(ws, channels, send_lock))
-    keepalive = asyncio.create_task(_presence_keepalive(conn))
+    forward = asyncio.create_task(_forward_events(ws, channels, send_lock))
+    keepalive = asyncio.create_task(_presence_keepalive(conn, token, ws, send_lock))
     try:
-        # 讀取對端訊息以偵測斷線(坐席送訊走 REST;此處為心跳/控制通道)
-        while True:
+        # 讀取對端訊息以偵測斷線(坐席送訊走 REST;此處為心跳/控制通道)。
+        # 伺服器端主動關閉(撤銷 4401 / 轉發中斷 1011)後不再 receive(Starlette 會拋 RuntimeError)
+        while ws.application_state == WebSocketState.CONNECTED:
             raw = await ws.receive_text()
             try:
                 data = json.loads(raw)
@@ -1645,8 +1753,7 @@ async def ws_agent(
             # 應用層心跳:客戶端每 25 秒 ping,10 秒內沒收到 pong 即重連
             if mtype == "ping":
                 await presence.touch(conn)
-                async with send_lock:
-                    await ws.send_json(realtime.make_event("pong"))
+                await _ws_send(ws, realtime.make_event("pong"), send_lock)
                 continue
             # 前景/背景狀態(原生 App 切換前後景時回報;推播據此決定是否推送)
             if mtype == "app_state":
@@ -1750,11 +1857,12 @@ async def ws_widget(
         visitor_id = session.visitor_id
 
     await ws.accept()
+    # 事件轉發中斷(Redis 訂閱失敗等)→ close(1011),widget 的 onclose 退避重連後重新訂閱
     forward = asyncio.create_task(
-        _pump(ws, [realtime.session_channel(tenant_id, session_id)])
+        _forward_events(ws, [realtime.session_channel(tenant_id, session_id)])
     )
     try:
-        while True:
+        while ws.application_state == WebSocketState.CONNECTED:
             data = await ws.receive_json()
             if not isinstance(data, dict):
                 continue

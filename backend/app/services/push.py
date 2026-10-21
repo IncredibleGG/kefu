@@ -548,8 +548,14 @@ async def _run(
     target: uuid.UUID | None = None,
     note: str | None = None,
 ) -> dict:
-    """判斷並送出一則推播。回傳摘要(供測試檢視)。"""
-    from sqlalchemy import select
+    """判斷並送出一則推播。回傳摘要(供測試檢視)。
+
+    連線池保護:所有 DB 讀取先做完、需要的值複製成純值後**先關閉 DB session**,才開始
+    FCM HTTP 送出迴圈(每台裝置最多 3 次 × 10 秒逾時 + 換 token)。否則 FCM / Google
+    端點變慢或被阻斷時,每個推播任務都佔住一條連線,少量並發即可耗盡連線池拖垮整個 API。
+    失效權杖於送完後另開一個短 session 批次撤銷。
+    """
+    from sqlalchemy import select, update
 
     from app.models.conversation import Message, Session
     from app.models.device import PUSH_PLATFORMS, DeviceToken
@@ -562,6 +568,7 @@ async def _run(
     if not sa or not project_id:
         return {"status": "skipped", "reason": "not_configured"}
 
+    # ---- 階段一:DB 讀取(只取純值,離開 with 即歸還連線) ----
     async with _open_session() as db:
         session = (
             await db.execute(
@@ -604,10 +611,12 @@ async def _run(
         if not await _staff_eligible(db, tenant_id, staff_id):
             return {"status": "skipped", "reason": "staff_inactive"}
 
-        devices = list(
-            (
+        # 只取送出需要的純值 (id, token, locale),不把 ORM 物件帶出 session
+        devices: list[tuple[uuid.UUID, str, str | None]] = [
+            (row.id, row.token, row.locale)
+            for row in (
                 await db.execute(
-                    select(DeviceToken).where(
+                    select(DeviceToken.id, DeviceToken.token, DeviceToken.locale).where(
                         DeviceToken.tenant_id == tenant_id,
                         DeviceToken.staff_id == staff_id,
                         DeviceToken.revoked_at.is_(None),
@@ -615,58 +624,71 @@ async def _run(
                         DeviceToken.platform.in_(PUSH_PLATFORMS),
                     )
                 )
-            )
-            .scalars()
-            .all()
-        )
+            ).all()
+        ]
         if not devices:
             return {"status": "skipped", "reason": "no_devices"}
 
-        if await presence.is_foreground(staff_id):
-            return {"status": "skipped", "reason": "foreground"}
-        if not await _acquire_dedupe(staff_id, session_id, kind):
-            return {"status": "skipped", "reason": "dedupe"}
-
+        visitor_id = session.visitor_id
         visitor_name: str | None = None
         preview = preview_enabled()
-        if preview and session.visitor_id is not None:
+        if preview and visitor_id is not None:
             visitor_name = (
                 await db.execute(
                     select(Visitor.display_name).where(
-                        Visitor.id == session.visitor_id, Visitor.tenant_id == tenant_id
+                        Visitor.id == visitor_id, Visitor.tenant_id == tenant_id
                     )
                 )
             ).scalar_one_or_none()
             if visitor_name:
                 visitor_name = mask_card_numbers(visitor_name)
 
-        sent = revoked = failed = 0
-        async with httpx.AsyncClient(transport=_transport, timeout=HTTP_TIMEOUT_SECONDS) as client:
-            for dev in devices:
-                title, body = build_texts(
-                    kind,
-                    resolve_lang(dev.locale),
-                    preview=preview,
-                    visitor_name=visitor_name,
-                    body_text=body_text,
+    # ---- 階段二:Redis 判斷(不需 DB) ----
+    if await presence.is_foreground(staff_id):
+        return {"status": "skipped", "reason": "foreground"}
+    if not await _acquire_dedupe(staff_id, session_id, kind):
+        return {"status": "skipped", "reason": "dedupe"}
+
+    # ---- 階段三:FCM 送出(此時不持有任何 DB 連線) ----
+    sent = failed = 0
+    revoked_ids: list[uuid.UUID] = []
+    async with httpx.AsyncClient(transport=_transport, timeout=HTTP_TIMEOUT_SECONDS) as client:
+        for dev_id, dev_token, dev_locale in devices:
+            title, body = build_texts(
+                kind,
+                resolve_lang(dev_locale),
+                preview=preview,
+                visitor_name=visitor_name,
+                body_text=body_text,
+            )
+            message = build_message(
+                dev_token,
+                title=title,
+                body=body,
+                kind=kind,
+                session_id=str(session_id),
+                tenant_id=str(tenant_id),
+            )
+            result = await _send_one(client, sa, project_id, message)
+            if result == "ok":
+                sent += 1
+            elif result == "revoke":
+                revoked_ids.append(dev_id)
+                logger.info("FCM 權杖失效,撤銷裝置 device=%s", dev_id)
+            else:
+                failed += 1
+
+    # ---- 階段四:失效權杖另開短 session 批次撤銷(租戶隔離;已撤銷者不重寫) ----
+    if revoked_ids:
+        async with _open_session() as db:
+            await db.execute(
+                update(DeviceToken)
+                .where(
+                    DeviceToken.id.in_(revoked_ids),
+                    DeviceToken.tenant_id == tenant_id,
+                    DeviceToken.revoked_at.is_(None),
                 )
-                message = build_message(
-                    dev.token,
-                    title=title,
-                    body=body,
-                    kind=kind,
-                    session_id=str(session_id),
-                    tenant_id=str(tenant_id),
-                )
-                result = await _send_one(client, sa, project_id, message)
-                if result == "ok":
-                    sent += 1
-                elif result == "revoke":
-                    revoked += 1
-                    dev.revoked_at = datetime.now(UTC)
-                    logger.info("FCM 權杖失效,已撤銷裝置 device=%s", dev.id)
-                else:
-                    failed += 1
-        if revoked:
+                .values(revoked_at=datetime.now(UTC))
+            )
             await db.commit()
-    return {"status": "sent", "sent": sent, "revoked": revoked, "failed": failed}
+    return {"status": "sent", "sent": sent, "revoked": len(revoked_ids), "failed": failed}

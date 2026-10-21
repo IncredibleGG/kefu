@@ -7,6 +7,10 @@ on:
     branches: [main]
     paths:
       - 'frontend/**'
+      - '!frontend/android/**'
+      - '!frontend/ios/**'
+      - 'clients/**'
+      - '.github/workflows/desktop.yml'
   pull_request:
     paths:
       - 'frontend/**'

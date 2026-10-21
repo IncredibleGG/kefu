@@ -7,8 +7,9 @@
   INVALID_ARGUMENT 撤銷權杖、429 / 5xx 重試 2 次、401 重換 token、絕不拋錯。
 - 判斷:只推負責真人坐席、AI 接待不推、坐席 / 租戶停用不推、前景連線不推、
   15 秒合併、指派 / 轉接給自己不推、桌面裝置不推、在地化與 KEFU_PUSH_PREVIEW。
-- 掛勾:routing._do_assign、channel_out.ingest_inbound、/transfer、/handoff、/ws/widget
-  皆在 commit 之後才呼叫 push。
+- 掛勾:routing._do_assign、channel_out.ingest_inbound、/transfer、/handoff、/ws/widget、
+  ext API(POST /api/ext/v1/messages 帶 session_id)皆在 commit 之後才呼叫 push。
+- 連線池保護:FCM 送出期間不持有 DB session;失效權杖於送完後另開短 session 撤銷。
 - dispatch._persist_message 降級路徑仍補發 message.new / session.activity。
 
 HTTP 用 httpx.MockTransport,Redis 用假物件(realtime.set_client),DB 用 SQLite。
@@ -616,6 +617,76 @@ async def test_unregistered_and_invalid_argument_revoke(factory, fcm):
     assert len(fcm.send_requests) == 2  # 不重試
 
 
+class _SessionTracker:
+    """包裝 session factory:記錄開過幾個 session、目前有幾個尚未關閉。"""
+
+    def __init__(self, maker) -> None:
+        self.maker = maker
+        self.opened = 0
+        self.active = 0
+
+    def __call__(self):
+        tracker = self
+
+        class _Ctx:
+            async def __aenter__(self):
+                tracker.opened += 1
+                tracker.active += 1
+                self._s = tracker.maker()
+                return await self._s.__aenter__()
+
+            async def __aexit__(self, *exc):
+                try:
+                    return await self._s.__aexit__(*exc)
+                finally:
+                    tracker.active -= 1
+
+        return _Ctx()
+
+
+def _track_send_sessions(fcm, tracker) -> list[int]:
+    """每個 FCM / OAuth HTTP 請求送出當下,記錄仍開著的 DB session 數。"""
+    seen: list[int] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen.append(tracker.active)
+        return fcm(request)
+
+    push.set_transport(httpx.MockTransport(_handler))
+    return seen
+
+
+@pytest.mark.asyncio
+async def test_db_session_closed_before_fcm_send(factory, fcm):
+    """FCM 送出迴圈期間不得持有 DB 連線(慢 / 被阻斷的 FCM 不能耗盡連線池)。"""
+    s = await _seed(factory)
+    tracker = _SessionTracker(factory)
+    push.set_session_factory(tracker)
+    seen = _track_send_sessions(fcm, tracker)
+    r = await push._run("message", s.tid, s.session, message_id=s.message)
+    assert r == {"status": "sent", "sent": 2, "revoked": 0, "failed": 0}
+    assert len(seen) == 3  # 1 次換 token + 2 台行動裝置
+    assert seen == [0, 0, 0]
+    assert tracker.opened == 1 and tracker.active == 0  # 沒有失效權杖 → 不另開 session
+
+
+@pytest.mark.asyncio
+async def test_revoke_uses_new_short_session_after_send(factory, fcm):
+    s = await _seed(factory)
+    tracker = _SessionTracker(factory)
+    push.set_session_factory(tracker)
+    seen = _track_send_sessions(fcm, tracker)
+    fcm.send_responses = [_fcm_error(404, "NOT_FOUND", detail="UNREGISTERED")]
+    r = await push._run("message", s.tid, s.session, message_id=s.message)
+    assert r == {"status": "sent", "sent": 1, "revoked": 1, "failed": 0}
+    assert all(n == 0 for n in seen)
+    assert tracker.opened == 2 and tracker.active == 0  # 讀取一個 + 撤銷一個短 session
+    devs = await _devices(factory, s.staff)
+    revoked = [t for t, d in devs.items() if d.revoked_at is not None]
+    assert len(revoked) == 1 and revoked[0] in {"tok-0-android", "tok-1-ios"}
+    assert devs["tok-2-desktop"].revoked_at is None
+
+
 @pytest.mark.asyncio
 async def test_plain_404_does_not_revoke(factory, fcm):
     """404 但沒有 UNREGISTERED 錯誤碼(例 project id 設錯)→ 不可誤撤權杖。"""
@@ -880,6 +951,74 @@ def test_ws_widget_hook_after_commit(tmp_path, monkeypatch):
 
     assert asyncio.run(_check()) == "在嗎"  # push 被呼叫時訊息已 commit
     asyncio.run(engine.dispose())
+
+
+def _ext_client(factory, tenant_id, order: list[str] | None = None):
+    """只掛 ext router 的 app:API key 依賴直接注入租戶;get_db 指向測試庫(可追蹤 commit)。"""
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+
+    from app.api.v1 import ext as ext_api
+    from app.core.apikey_auth import ApiKeyContext, get_api_key_context
+    from app.core.db import get_db
+
+    async def _get_db():
+        async with factory() as db:
+            if order is not None:
+                _track_commits(db, order)
+            yield db
+
+    app = FastAPI()
+    app.include_router(ext_api.router, prefix="/api/ext/v1")
+    app.dependency_overrides[get_db] = _get_db
+    app.dependency_overrides[get_api_key_context] = lambda: ApiKeyContext(
+        tenant_id=tenant_id, api_key_id=uuid.uuid4()
+    )
+    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+
+
+@pytest.mark.asyncio
+async def test_ext_api_session_message_hook_after_commit(factory, monkeypatch, fake_redis):
+    """POST /api/ext/v1/messages 帶 session_id(繞過 ingest_inbound)→ commit 後排程訊息推播。"""
+    async def _noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(conv_svc, "_emit_automation", _noop)
+    monkeypatch.setattr(conv_svc, "_deliver_webhook", _noop)
+    s = await _seed(factory, devices=())
+    order: list[str] = []
+    calls: list[tuple] = []
+
+    def _rec(*args):
+        order.append("push")
+        calls.append(args)
+
+    monkeypatch.setattr(push, "on_visitor_message", _rec)
+    async with _ext_client(factory, s.tid, order) as c:
+        r = await c.post("/api/ext/v1/messages", json={"session_id": str(s.session), "content": "外部系統來訊"})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert order == ["commit", "push"]
+    tid, sid, mid = calls[0]
+    assert (tid, sid) == (s.tid, s.session)
+    assert str(mid) == r.json()["data"]["id"]
+
+
+@pytest.mark.asyncio
+async def test_ext_api_push_failure_never_breaks_response(factory, monkeypatch, fake_redis):
+    async def _noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(conv_svc, "_emit_automation", _noop)
+    monkeypatch.setattr(conv_svc, "_deliver_webhook", _noop)
+    s = await _seed(factory, devices=())
+
+    def _boom(*a):
+        raise RuntimeError("push broken")
+
+    monkeypatch.setattr(push, "on_visitor_message", _boom)
+    async with _ext_client(factory, s.tid) as c:
+        r = await c.post("/api/ext/v1/messages", json={"session_id": str(s.session), "content": "hi"})
+    assert r.status_code == 200 and r.json()["ok"] is True
 
 
 # =========================================================================== #

@@ -84,6 +84,8 @@ export function WorkspacePage() {
         >
           <Loader2 className="h-8 w-8 animate-spin" />
           <p className="text-sm">{t("common.loading", { defaultValue: "載入中…" })}</p>
+          {/* 沉浸模式下頂欄 / 分頁列都隱藏:載入卡住時仍要能離開(按鈕 md:hidden,桌面不變) */}
+          {backButton}
         </div>
       ) : (
         // 未選會話的佔位畫面:手機上清單即主畫面,不顯示佔位

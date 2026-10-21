@@ -143,6 +143,7 @@ export function AppLayout() {
             from: visitorName(),
             text: p.preview ?? p.content,
             messageId: p.message_id,
+            pushed: true, // 伺服器也會推給負責坐席
           });
           break;
         }
@@ -157,6 +158,11 @@ export function AppLayout() {
               from: visitorName(),
               text: p.content,
               messageId: msgId,
+              // 伺服器只把訪客訊息推給負責坐席
+              pushed:
+                p.handler_staff_id !== undefined
+                  ? p.handler_staff_id === staffId
+                  : sessionAssignedTo(qc, sid, staffId),
             });
             break;
           }
@@ -176,7 +182,7 @@ export function AppLayout() {
         case "session.new": {
           const handler = p.handler_staff_id ?? p.assignee_staff_id ?? p.staff_id;
           if (handler && handler === staffId && p.actor !== staffId) {
-            notify.notifyEvent("assigned", { sessionId: sid, dedupId: sid });
+            notify.notifyEvent("assigned", { sessionId: sid, dedupId: sid, pushed: type === "session.assigned" });
           }
           break;
         }
@@ -185,7 +191,7 @@ export function AppLayout() {
           if (!sid || !p.handler_staff_id || p.handler_staff_id !== staffId) break;
           if (p.action && p.action !== "transfer") break;
           if (p.from_staff_id && p.from_staff_id === staffId) break;
-          notify.notifyEvent("assigned", { sessionId: sid, dedupId: sid });
+          notify.notifyEvent("assigned", { sessionId: sid, dedupId: sid, pushed: true });
           break;
         }
         // 新會話進入佇列(待接待,尚未指派)→ 提醒團隊

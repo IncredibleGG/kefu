@@ -311,6 +311,40 @@ async def test_login_rate_limit_keys(env, fake_redis):
 
 
 @pytest.mark.asyncio
+async def test_login_no_candidate_still_costs_one_bcrypt(env, monkeypatch):
+    """查無候選列(email 不存在 / 不屬於指定租戶)也跑一次 bcrypt(假雜湊),與「密碼錯」耗時相近,
+    選填 tenant 欄位不能被當成租戶成員資格的計時探針。"""
+    client, factory = env
+    t1 = await _tenant(factory, "Acme", "acme")
+    await _tenant(factory, "Other", "other")
+    await _staff(factory, t1, "grace@example.com")
+
+    real_verify = auth_api.verify_password
+    hashes: list[str] = []
+
+    def _spy(raw, hashed):
+        hashes.append(hashed)
+        return real_verify(raw, hashed)
+
+    monkeypatch.setattr(auth_api, "verify_password", _spy)
+    cases = [
+        {"email": "nobody@example.com", "password": "secret123"},  # email 不存在
+        {"email": "grace@example.com", "password": "secret123", "tenant": "other"},  # 非該租戶成員
+        {"email": "grace@example.com", "password": "secret123", "tenant": "missing"},  # 租戶不存在
+        {"email": "grace@example.com", "password": "wrong", "tenant": "acme"},  # 成員但密碼錯
+    ]
+    for body in cases:
+        hashes.clear()
+        r = await client.post("/api/v1/auth/login", json=body)
+        assert r.status_code == 401
+        assert len(hashes) == 1, body  # 每種失敗都恰好一次 bcrypt
+    # 前三種用的是假雜湊(永遠比對不中),且為同成本的 bcrypt 雜湊
+    dummy = auth_api._dummy_password_hash()
+    assert dummy.startswith("$2") and auth_api._dummy_password_hash() == dummy
+    assert real_verify("secret123", dummy) is False
+
+
+@pytest.mark.asyncio
 async def test_login_ip_limit_200(env, fake_redis):
     client, _ = env
     fake_redis.counters["rl:login-ip:127.0.0.1"] = 200
@@ -479,6 +513,32 @@ async def test_google_web_callback_requires_matching_state(env, monkeypatch):
     loc = r.headers["location"]
     assert loc.startswith("/login#sso_token=")
     assert decode_access_token(loc.split("#sso_token=", 1)[1])["tenant_id"] == str(tid)
+
+
+@pytest.mark.asyncio
+async def test_google_web_callback_non_ascii_state_redirects_invalid(env, monkeypatch):
+    """非 ASCII 的 state(或 cookie)→ 導回 OAUTH_STATE_INVALID,而非 compare_digest TypeError → 500。"""
+    client, _ = env
+    _patch_google(monkeypatch, "ivy@example.com")
+    r = await client.get("/api/v1/auth/oauth/google/start")  # 種下 state cookie
+    state = _qs(r.headers["location"])["state"]
+    assert client.cookies.get("kefu_oauth_state") == state
+
+    for bad in ("é", "é" * 43, state[:-1] + "é", state + "\n"):
+        r = await client.get("/api/v1/auth/oauth/google/callback", params={"code": "abc", "state": bad})
+        assert r.status_code == 302, bad
+        assert _qs(r.headers["location"])["sso_error"] == "OAUTH_STATE_INVALID"
+
+    # cookie 含非 ASCII(原始 UTF-8 位元組,Starlette 以 latin-1 解成非 ASCII str)、
+    # state 為合法格式 → 同樣導回 OAUTH_STATE_INVALID
+    client.cookies.clear()
+    r = await client.get(
+        "/api/v1/auth/oauth/google/callback",
+        params={"code": "abc", "state": state},
+        headers={"Cookie": ("kefu_oauth_state=" + "é" * 43).encode("utf-8")},
+    )
+    assert r.status_code == 302
+    assert _qs(r.headers["location"])["sso_error"] == "OAUTH_STATE_INVALID"
 
 
 @pytest.mark.asyncio
