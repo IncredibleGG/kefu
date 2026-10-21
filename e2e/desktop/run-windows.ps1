@@ -6,6 +6,11 @@
 # 2. 若連 session 都建不起來(WebView2 沒開 DevTools 埠,msedgedriver 回 "DevToolsActivePort file doesn't exist"),
 #    改用附加模式:自己帶 --remote-debugging-port 啟動 kefu.exe(先試 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
 #    環境變數,不行再試 WebView2 的登錄覆寫),再讓 msedgedriver 以 debuggerAddress 附加上去。
+# 3. 兩者都失敗時跑 webview2-probe.ps1 對照組,並在 job 上留下 warning。
+#
+# 已知限制(2026-10,windows-latest、WebView2 Runtime 154/155):runtime 不採用 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+# 與登錄覆寫(連官方 SDK 寫的最小宿主也一樣),只接受宿主程式自己在 environment options 傳入的參數,
+# 所以 msedgedriver / tauri-driver 無法讓 kefu.exe 開 DevTools 埠。證據與可行解法見 e2e/README.md。
 $ErrorActionPreference = 'Continue'
 $out = $env:E2E_OUT
 New-Item -ItemType Directory -Force $out | Out-Null
@@ -29,7 +34,7 @@ function Reset-AppData {
 }
 
 function Test-DevTools($port) {
-  for ($i = 0; $i -lt 30; $i++) {
+  for ($i = 0; $i -lt 20; $i++) {
     try {
       $v = Invoke-RestMethod -Uri "http://127.0.0.1:$port/json/version" -TimeoutSec 2
       Note "DevTools 埠 $port 已開:$($v.Browser)"
@@ -75,7 +80,7 @@ if (Test-Path (Join-Path $out '01-setup.png')) { Note "結果:tauri-driver 模�
 $port = 9222
 $regPath = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
 $attached = $false
-foreach ($how in 'env', 'env-basicuser', 'registry') {
+foreach ($how in 'env', 'registry') {
   Reset-AppData
   Note "模式 2:附加($how)"
   if ($how -like 'env*') {
@@ -86,14 +91,9 @@ foreach ($how in 'env', 'env-basicuser', 'registry') {
     New-Item -Path $regPath -Force | Out-Null
     New-ItemProperty -Path $regPath -Name 'kefu.exe' -Value "--remote-debugging-port=$port" -PropertyType String -Force | Out-Null
   }
-  if ($how -eq 'env-basicuser') {
-    # 以非提升權限(Basic User 信任等級)啟動,排除「管理員行程忽略覆寫參數」的可能
-    Start-Process -FilePath 'runas.exe' -ArgumentList '/trustlevel:0x20000', "`"$env:KEFU_EXE`"" -WindowStyle Hidden
-  } else {
-    $app = Start-Process -FilePath $env:KEFU_EXE -PassThru `
-      -RedirectStandardOutput (Join-Path $out "kefu-$how.stdout.log") `
-      -RedirectStandardError (Join-Path $out "kefu-$how.stderr.log")
-  }
+  $app = Start-Process -FilePath $env:KEFU_EXE -PassThru `
+    -RedirectStandardOutput (Join-Path $out "kefu-$how.stdout.log") `
+    -RedirectStandardError (Join-Path $out "kefu-$how.stderr.log")
   if (Test-DevTools $port) { $attached = $true; break }
   Note "附加($how):DevTools 埠沒有開"
   Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'msedgewebview2' -and $_.CommandLine -notmatch '--type=' } |
@@ -106,6 +106,7 @@ if (-not $attached) {
   Remove-Item -Path $regPath -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
   & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File (Join-Path $here 'webview2-probe.ps1') (Join-Path $out 'webview2-probe.log')
+  Write-Output "::warning title=e2e-windows::WebView2 Runtime 不採用 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS / 登錄覆寫,WebDriver 無法連上 kefu.exe(見 e2e/README.md「Windows 已知限制」與 artifact 的 webview2-probe.log)"
   exit 1
 }
 

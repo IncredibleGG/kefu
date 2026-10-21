@@ -7,7 +7,7 @@ CI 上每個平台各一個 job,**`continue-on-error: true`,不擋建置與發�
 |---|---|---|---|
 | Android | `android.yml` → `e2e-android` | [Maestro](https://maestro.dev) + `reactivecircus/android-emulator-runner`(API 34、x86_64) | `e2e-android` |
 | iOS | `ios.yml` → `e2e-ios` | Maestro + `macos-latest` 上的 iPhone 模擬器(最新 iOS runtime) | `e2e-ios` |
-| Windows | `desktop.yml` → `e2e-windows` | `tauri-driver` + 與 WebView2 同版的 `msedgedriver` + `selenium-webdriver` | `e2e-windows` |
+| Windows | `desktop.yml` → `e2e-windows` | `tauri-driver` + 與 WebView2 同版的 `msedgedriver` + `selenium-webdriver` | `e2e-windows`(**目前受阻**,見下方「Windows 已知限制」) |
 | macOS | — | **不支援**:WKWebView 沒有 WebDriver 實作(`tauri-driver` 只支援 Windows / Linux),只保留 `smoke-macos` 啟動截圖 | — |
 
 每個 job 都依賴同一個 workflow 的建置 job,安裝**剛建好的**產物(Android debug APK、iOS 模擬器版 `App.app`、Windows NSIS 安裝檔靜默安裝),
@@ -52,7 +52,9 @@ e2e/
 │       ├── submit-login.yaml    # 密碼框按 Enter 送出(WKWebView 收鍵盤不穩)
 │       └── dismiss-alerts.yaml  # 系統權限詢問一律允許
 ├── desktop/
-│   ├── login.mjs                # selenium-webdriver,經 tauri-driver 驅動 kefu.exe
+│   ├── login.mjs                # selenium-webdriver,經 tauri-driver 驅動 kefu.exe(另有附加模式)
+│   ├── run-windows.ps1          # CI 入口:tauri-driver → 失敗時附加模式 → 再失敗跑對照組
+│   ├── webview2-probe.ps1       # 對照組:用官方 WebView2 SDK 開最小宿主,檢查覆寫參數是否生效
 │   └── package.json / package-lock.json
 └── scripts/redact.py            # 上傳前遮蔽帳密
 ```
@@ -60,6 +62,32 @@ e2e/
 選擇器以畫面文字為主(App 預設語系是繁體中文),點 `<label>` 聚焦對應輸入框;
 桌面版用 CSS:`#server-url`、`#email`、`#password`、`form button[type=submit]`、`a[href="/workspace"]`、`[role=tablist] [role=tab]`。
 改了這些頁面(`ServerSetupPage.tsx`、`LoginPage.tsx`、`ConversationList.tsx`、底部分頁列 / 側欄)的文字或結構時,記得同步改這裡。
+
+## Windows 已知限制(2026-10)
+
+`windows-latest` 上的 WebView2 Runtime(實測 154.0.4258.62、155.0.4283.62)**不採用**
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 環境變數,也不採用
+`HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments` 登錄覆寫;
+`msedgedriver`(以及包著它的 `tauri-driver`)正是靠這個環境變數把 `--remote-debugging-port` 塞給 WebView2,
+所以 browser 行程永遠沒有 DevTools 埠,建立 session 時固定回
+`session not created: DevToolsActivePort file doesn't exist`。
+
+`e2e-windows` 每次都會留下證據(artifact `e2e-windows`):
+
+- `processes.log` / `test.log`:browser 行程命令列只有 App 自己傳的 `--disable-features=…`,
+  環境變數裡的 `--remote-debugging-port`、`--disable-sync` 等完全沒出現(`--user-data-dir` 覆寫倒是有生效)。
+- `webview2-probe.log`:對照組(官方 Microsoft.Web.WebView2 SDK 寫的最小宿主,不是 kefu):
+  不帶 / 帶 AdditionalBrowserArguments 時環境變數同樣無效;**由宿主自己在 options 傳 `--remote-debugging-port` 則立即可用**。
+
+也就是說這不是 kefu 的 bug,而是 runtime 端的行為;要在 CI 跑 Windows E2E 只能讓 App 自己開 DevTools 埠,例如:
+
+1. 另建一份**僅供 E2E** 的 Windows 安裝檔:`tauri build --config <覆寫檔>`,在主視窗設定
+   `additionalBrowserArgs: "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9222"`
+   (覆寫會取代整個 `windows` 陣列,需完整複製主視窗設定),再用 `run-windows.ps1` 的附加模式跑;或
+2. 在 App 原始碼加「只在特定環境變數存在時」才附加 `--remote-debugging-port` 的 opt-in(需改 `src-tauri`)。
+
+兩者都牽涉到產品建置或原始碼,尚未實作;等決定後再接上。`run-windows.ps1` 會先試標準的 tauri-driver 路徑,
+runtime 若恢復採用環境變數,這個 job 會直接通過。
 
 ## 在本機跑
 
