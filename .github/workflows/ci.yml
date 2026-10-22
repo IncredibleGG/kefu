@@ -1,0 +1,139 @@
+# 一般 CI:後端 pytest、前端型別檢查 + 建置(web 與 native)、訪客 widget 建置。
+# 依改動路徑決定要跑哪些 job(GitHub 沒有 job 層級的 paths 過濾,所以先由 changes job 算出來)。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # npm 下載偶發網路中斷(ECONNRESET)時自動重試,避免 CI 被 registry 抖動卡住
+  NPM_CONFIG_FETCH_RETRIES: 5
+  NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: 20000
+  NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: 120000
+
+jobs:
+  changes:
+    name: 偵測改動範圍
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.diff.outputs.backend }}
+      frontend: ${{ steps.diff.outputs.frontend }}
+      widget: ${{ steps.diff.outputs.widget }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: diff
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          all() {
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "widget=true" >> "$GITHUB_OUTPUT"
+            echo "無法判斷改動範圍或為手動觸發:全部執行"
+            exit 0
+          }
+          case "$EVENT" in
+            pull_request)
+              # PR 檢出的是 merge commit,第一個 parent 就是目標分支
+              files=$(git diff --name-only HEAD^1 HEAD) || all ;;
+            push)
+              if [[ -z "${BEFORE}" || "${BEFORE}" =~ ^0+$ ]] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then all; fi
+              files=$(git diff --name-only "$BEFORE" "$GITHUB_SHA") || all ;;
+            *) all ;;
+          esac
+          echo "改動的檔案:"; echo "$files"
+          has() { grep -qE "$1" <<<"$files" && echo true || echo false; }
+          wf='^\.github/workflows/ci\.yml$'
+          echo "backend=$(has "^backend/|$wf")" >> "$GITHUB_OUTPUT"
+          # 原生殼目錄(android/ios/src-tauri)不影響 tsc 與 vite 建置,由各自的 workflow 負責
+          web_files=$(grep -vE '^frontend/(android|ios|src-tauri)/' <<<"$files" || true)
+          echo "frontend=$(grep -qE "^frontend/|^clients/(branding|scripts)/|$wf" <<<"$web_files" && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "widget=$(has "^widget/|$wf")" >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+  backend:
+    name: 後端 pytest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: '3.12'
+          working-directory: backend
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: 安裝依賴
+        # --locked:uv.lock 與 pyproject.toml 不一致時直接失敗(避免本機綠、CI 紅的依賴漂移)
+        run: uv sync --locked --extra dev
+      - name: pytest(不需要 Postgres / Redis)
+        run: uv run --no-sync pytest -q
+
+  frontend:
+    name: 前端 tsc + build
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: 型別檢查
+        run: npm run lint
+      - name: 登入 / 原生 SSO 單元測試(node:test + Vite 附帶的 esbuild)
+        run: node src/components/auth/__tests__/run.mjs
+      - name: web 建置
+        run: npm run build
+      # 原生版 bundle 也在這裡先建一次,壞掉時不必等到 macOS / Windows runner 才發現
+      - name: 注入品牌(產生 .env.native)
+        run: node ../clients/scripts/sync-brand.mjs
+      - name: native 建置
+        run: npm run build:native
+
+  widget:
+    name: widget build
+    needs: changes
+    if: needs.changes.outputs.widget == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: widget
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: widget/package-lock.json
+      - run: npm ci
+      - run: npm run build

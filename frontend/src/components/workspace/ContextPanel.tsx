@@ -37,91 +37,178 @@ import { fetchVisitorPageViews } from "@/api/pagetrail";
 import { goalsApi, type Goal } from "@/api/goals";
 import type { VisitorAiProfile, VisitorWithProfile } from "@/api/adapters";
 import { useUi } from "@/stores/ui";
+import { cn } from "@/lib/utils";
 import type { KbHit, Session, Visitor } from "@/types";
 
+/** 情境面板分頁(手機 / 平板抽屜以網址 ?panel= 指定,見 ContextSheet)。 */
+export const CONTEXT_TABS = ["info", "insight", "kb", "history", "trail", "search"] as const;
+export type ContextTab = (typeof CONTEXT_TABS)[number];
+export function isContextTab(v: unknown): v is ContextTab {
+  return typeof v === "string" && (CONTEXT_TABS as readonly string[]).includes(v);
+}
+
+/** 桌面(≥ lg)右欄:可拖曳調寬的 aside,內容為共用的 ContextPanelBody。 */
 export function ContextPanel({ session }: { session: Session }) {
   const { t } = useTranslation();
   const { rightPanelWidth, setRightPanelWidth, setRightPanelCollapsed } = useUi();
 
-  // 拖曳調寬(左緣)
+  // 拖曳調寬(左緣):改用 pointer 事件(滑鼠 / 觸控筆皆可);觸控為主的裝置隱藏把手
   const onDragStart = useCallback(
-    (e: React.MouseEvent) => {
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
       e.preventDefault();
       const startX = e.clientX;
       const startW = rightPanelWidth;
-      const onMove = (ev: MouseEvent) => setRightPanelWidth(startW + (startX - ev.clientX));
+      const onMove = (ev: PointerEvent) => setRightPanelWidth(startW + (startX - ev.clientX));
       const onUp = () => {
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
       };
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
     },
     [rightPanelWidth, setRightPanelWidth],
   );
 
   return (
     <aside
-      className="relative flex shrink-0 flex-col border-l border-border bg-card"
-      style={{ width: rightPanelWidth }}
+      className="relative flex w-(--rpw) shrink-0 flex-col border-l border-border bg-card"
+      // 寬度走 CSS 變數(而非 inline width),讓抽屜 / 響應式樣式可沿用同一個值
+      style={{ "--rpw": `${rightPanelWidth}px` } as React.CSSProperties}
     >
       {/* 拖曳把手 */}
       <div
-        onMouseDown={onDragStart}
-        className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize hover:bg-brand/20"
+        onPointerDown={onDragStart}
+        className="absolute -left-1 top-0 z-10 h-full w-2 cursor-col-resize touch-none hover:bg-brand/20 pointer-coarse:hidden"
         title={t("workspace.contextPanel.resizeTooltip")}
       />
-      <Tabs defaultValue="info" className="flex min-h-0 flex-1 flex-col">
-        <div className="flex items-center gap-1 border-b border-border p-2">
-          <TabsList className="h-8 flex-1 justify-start gap-0.5 bg-transparent p-0">
-            <PanelTab value="info" icon={<User className="h-3.5 w-3.5" />} label={t("panel.info")} />
-            <PanelTab value="insight" icon={<Sparkles className="h-3.5 w-3.5" />} label={t("panel.insight")} />
-            <PanelTab value="kb" icon={<BookOpen className="h-3.5 w-3.5" />} label={t("panel.kb")} />
-            <PanelTab value="history" icon={<History className="h-3.5 w-3.5" />} label={t("panel.history")} />
-            <PanelTab
-              value="trail"
-              icon={<Footprints className="h-3.5 w-3.5" />}
-              label={t("pagetrail.tab", { defaultValue: "瀏覽軌跡" })}
-            />
-            <PanelTab value="search" icon={<Search className="h-3.5 w-3.5" />} label="" />
-          </TabsList>
-          <SimpleTooltip label={t("panel.collapse")} side="left">
-            <Button size="icon-sm" variant="ghost" onClick={() => setRightPanelCollapsed(true)}>
-              <PanelRightClose className="h-4 w-4" />
-            </Button>
-          </SimpleTooltip>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          <TabsContent value="info">
-            <InfoTab session={session} />
-          </TabsContent>
-          <TabsContent value="insight">
-            <InsightTab sessionId={session.id} />
-          </TabsContent>
-          <TabsContent value="kb">
-            <KbTab sessionId={session.id} />
-          </TabsContent>
-          <TabsContent value="history">
-            <HistoryTab visitorId={session.visitor.id} />
-          </TabsContent>
-          <TabsContent value="trail">
-            <PageTrailTab visitorId={session.visitor.id} />
-          </TabsContent>
-          <TabsContent value="search">
-            <SearchTab />
-          </TabsContent>
-        </div>
-      </Tabs>
+      <ContextPanelBody
+        session={session}
+        onClose={() => setRightPanelCollapsed(true)}
+        closeLabel={t("panel.collapse")}
+        closeIcon={<PanelRightClose className="h-4 w-4" />}
+      />
     </aside>
   );
 }
 
-function PanelTab({ value, icon, label }: { value: string; icon: React.ReactNode; label: string }) {
+/**
+ * 情境面板本體(分頁列 + 內容),由桌面 aside、平板抽屜、手機底部 sheet 共用。
+ * - 未傳 tab 時為非受控(預設 info,與桌面原行為相同);傳 tab 時由外部(網址)控制。
+ * - layout="sheet":分頁常駐顯示文字且可橫向捲動(手機);"panel":標籤僅 xl 顯示(桌面原樣)。
+ */
+export function ContextPanelBody({
+  session,
+  tab,
+  onTabChange,
+  onClose,
+  closeLabel,
+  closeIcon,
+  layout = "panel",
+  className,
+}: {
+  session: Session;
+  tab?: ContextTab;
+  onTabChange?: (tab: ContextTab) => void;
+  onClose?: () => void;
+  closeLabel?: string;
+  closeIcon?: React.ReactNode;
+  layout?: "panel" | "sheet";
+  className?: string;
+}) {
+  const { t } = useTranslation();
+  const sheet = layout === "sheet";
+  const tabsState =
+    tab !== undefined
+      ? { value: tab, onValueChange: (v: string) => isContextTab(v) && onTabChange?.(v) }
+      : { defaultValue: "info" };
+
   return (
-    <TabsTrigger value={value} className="gap-1 px-2">
+    <Tabs {...tabsState} className={cn("flex min-h-0 flex-1 flex-col", className)}>
+      <div className="flex items-center gap-1 border-b border-border p-2">
+        <TabsList
+          className={cn(
+            "h-8 flex-1 justify-start gap-0.5 bg-transparent p-0 pointer-coarse:h-10",
+            sheet && "min-w-0 overflow-x-auto scrollbar-none",
+          )}
+        >
+          <PanelTab value="info" icon={<User className="h-3.5 w-3.5" />} label={t("panel.info")} sheet={sheet} />
+          <PanelTab value="insight" icon={<Sparkles className="h-3.5 w-3.5" />} label={t("panel.insight")} sheet={sheet} />
+          <PanelTab value="kb" icon={<BookOpen className="h-3.5 w-3.5" />} label={t("panel.kb")} sheet={sheet} />
+          <PanelTab value="history" icon={<History className="h-3.5 w-3.5" />} label={t("panel.history")} sheet={sheet} />
+          <PanelTab
+            value="trail"
+            icon={<Footprints className="h-3.5 w-3.5" />}
+            label={t("pagetrail.tab", { defaultValue: "瀏覽軌跡" })}
+            sheet={sheet}
+          />
+          {/* 桌面只顯示圖示;手機 sheet 補上文字標籤 */}
+          <PanelTab
+            value="search"
+            icon={<Search className="h-3.5 w-3.5" />}
+            label={sheet ? t("panel.search") : ""}
+            sheet={sheet}
+          />
+        </TabsList>
+        {onClose && (
+          <SimpleTooltip label={closeLabel} side="left">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="pointer-coarse:size-10"
+              onClick={onClose}
+              aria-label={closeLabel}
+            >
+              {closeIcon}
+            </Button>
+          </SimpleTooltip>
+        )}
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        <TabsContent value="info">
+          <InfoTab session={session} />
+        </TabsContent>
+        <TabsContent value="insight">
+          <InsightTab sessionId={session.id} />
+        </TabsContent>
+        <TabsContent value="kb">
+          <KbTab sessionId={session.id} />
+        </TabsContent>
+        <TabsContent value="history">
+          <HistoryTab visitorId={session.visitor.id} />
+        </TabsContent>
+        <TabsContent value="trail">
+          <PageTrailTab visitorId={session.visitor.id} />
+        </TabsContent>
+        <TabsContent value="search">
+          <SearchTab />
+        </TabsContent>
+      </div>
+    </Tabs>
+  );
+}
+
+function PanelTab({
+  value,
+  icon,
+  label,
+  sheet,
+}: {
+  value: string;
+  icon: React.ReactNode;
+  label: string;
+  sheet?: boolean;
+}) {
+  return (
+    <TabsTrigger
+      value={value}
+      className={cn("gap-1 px-2 pointer-coarse:h-10 pointer-coarse:min-w-10", sheet && "shrink-0 px-3")}
+    >
       {icon}
-      {label && <span className="hidden xl:inline">{label}</span>}
+      {label && <span className={sheet ? undefined : "hidden xl:inline"}>{label}</span>}
     </TabsTrigger>
   );
 }

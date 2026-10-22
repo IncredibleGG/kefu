@@ -1,0 +1,553 @@
+# 桌面版(Tauri 2):Windows(.msi + NSIS .exe)與 macOS(.dmg,ad-hoc 簽章)。
+# 只建置、不建 Release;正式發佈由 release.yml 以 workflow_call 呼叫本檔(universal: true)。
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '!frontend/android/**'
+      - '!frontend/ios/**'
+      - 'clients/**'
+      - '.github/workflows/desktop.yml'
+      - 'e2e/desktop/**'
+      - 'e2e/scripts/**'
+  pull_request:
+    paths:
+      - 'frontend/**'
+      - '!frontend/android/**'
+      - '!frontend/ios/**'
+      - 'clients/**'
+      - '.github/workflows/desktop.yml'
+      - 'e2e/desktop/**'
+      - 'e2e/scripts/**'
+  workflow_dispatch:
+    inputs:
+      universal:
+        type: boolean
+        default: false
+        description: 'macOS 建 universal(Intel + Apple Silicon,約 2 倍編譯時間)'
+  workflow_call:
+    inputs:
+      universal:
+        type: boolean
+        default: false
+
+# 被呼叫時 github.workflow 是呼叫端的名稱,所以用固定字首
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # npm 下載偶發網路中斷(ECONNRESET)時自動重試,避免 CI 被 registry 抖動卡住
+  NPM_CONFIG_FETCH_RETRIES: 5
+  NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: 20000
+  NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: 120000
+
+jobs:
+  build:
+    name: build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            rust_targets: ''
+            args: '--bundles msi,nsis'
+          - name: macos
+            os: macos-latest
+            rust_targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            # 平常只建 aarch64;手動勾選、tag 或 release 呼叫時建 universal
+            args: ${{ (inputs.universal || startsWith(github.ref, 'refs/tags/')) && '--target universal-apple-darwin --bundles app,dmg' || '--target aarch64-apple-darwin --bundles app,dmg' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # 建置號取 git commit 數,需要完整歷史
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'frontend/src-tauri -> target'
+          key: ${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: 注入品牌與版本
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 建置號 = commit 數:同一 commit 在各 workflow 一致且單調遞增,
+          # 避免 run_number 各自計數造成 Android versionCode 倒退而無法覆蓋安裝
+          args=(--build "$(git rev-list --count HEAD)")
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
+            v="${GITHUB_REF_NAME#v}"
+            v="${v%%[-+]*}"   # MSI 只接受數字版本,去掉 -beta.1 之類的字尾
+            args+=(--version "$v")
+          fi
+          node clients/scripts/sync-brand.mjs "${args[@]}"
+
+      - name: 清掉快取裡的舊安裝檔
+        shell: bash
+        run: rm -rf frontend/src-tauri/target/release/bundle frontend/src-tauri/target/*/release/bundle
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          # ad-hoc 簽章(tauri.conf.json 也有設 signingIdentity "-");Windows 會忽略
+          APPLE_SIGNING_IDENTITY: '-'
+        with:
+          projectPath: frontend      # 會執行 npm run tauri build -- <args>
+          args: ${{ matrix.args }}
+          retryAttempts: 1           # CI 上 DMG 偶爾失敗
+          # 不填 tagName / releaseName / releaseId:只建置,不建 Release
+
+      - name: 收集安裝檔
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist-desktop
+          find frontend/src-tauri/target -type f -path '*/release/bundle/*' \
+            \( -name '*.msi' -o -name '*-setup.exe' -o -name '*.dmg' \) \
+            -exec cp {} dist-desktop/ \;
+          ls -la dist-desktop
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kefu-desktop-${{ matrix.name }}
+          path: dist-desktop/*
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------- 冒煙測試:裝起來、打開、截圖(暫不擋流程) ----------
+
+  smoke-macos:
+    name: smoke (macos)
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: kefu-desktop-macos
+          path: pkg
+      - name: 掛載 dmg、啟動 App、截圖
+        shell: bash
+        run: |
+          set -euxo pipefail
+          out="$GITHUB_WORKSPACE/smoke"; mkdir -p "$out"
+          dmg=$(ls pkg/*.dmg | head -n 1)
+          mnt=$(mktemp -d)
+          hdiutil attach "$dmg" -nobrowse -readonly -noautoopen -mountpoint "$mnt"
+          src_app=$(find "$mnt" -maxdepth 1 -name '*.app' | head -n 1)
+          app_dir="$RUNNER_TEMP/kefu-smoke"; mkdir -p "$app_dir"
+          cp -R "$src_app" "$app_dir/"
+          hdiutil detach "$mnt" || true
+          app="$app_dir/$(basename "$src_app")"
+          # 從網路下載的未簽章 App 會帶 quarantine 屬性,清掉才不會被 Gatekeeper 擋
+          xattr -cr "$app"
+          codesign -dv "$app" > "$out/codesign.txt" 2>&1 || true
+          # window-state 還原情境(預先寫入上次的視窗狀態再啟動,實際視窗座標記在 window.txt):
+          #   1. 上次的尺寸比螢幕大 → 要縮到可用區域 90% 並置中(macos.png)
+          #   2. 上次是放得下的 900×560、位於 (40,60) → 要原樣保留(macos-small.png)
+          # macOS 的 set_size 是非同步的,讀回舊尺寸就會漏縮 1、誤改 2
+          state_dir="$HOME/Library/Application Support/cc.kf56k.kefu"
+          mkdir -p "$state_dir"
+          seed() {
+            printf '{"main":{"width":%s,"height":%s,"x":%s,"y":%s,"prev_x":%s,"prev_y":%s,"maximized":false,"visible":true,"decorated":true,"fullscreen":false}}' \
+              "$1" "$2" "$3" "$4" "$3" "$4" > "$state_dir/.window-state.json"
+          }
+          # 印出 kefu 主視窗外框與主螢幕可用區域(扣掉選單列與 Dock),座標原點在主螢幕左上角:
+          # "x y w h 可用區x 可用區y 可用區w 可用區h"
+          cat > "$RUNNER_TEMP/bounds.swift" <<'SWIFT'
+          import AppKit
+          let screen = NSScreen.screens[0]
+          let vf = screen.visibleFrame
+          let vTop = screen.frame.height - (vf.origin.y + vf.height)
+          let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+          for w in list where (w[kCGWindowOwnerName as String] as? String) == "kefu" && (w[kCGWindowLayer as String] as? Int) == 0 {
+            if let d = w[kCGWindowBounds as String], let r = CGRect(dictionaryRepresentation: d as! CFDictionary) {
+              print(Int(r.minX), Int(r.minY), Int(r.width), Int(r.height), Int(vf.minX), Int(vTop), Int(vf.width), Int(vf.height))
+            }
+          }
+          SWIFT
+          failed=0
+          fail() { echo "::error title=smoke-macos::$1" | tee -a "$out/window.txt"; failed=1; }
+          bounds() {
+            local v
+            v=$(swift "$RUNNER_TEMP/bounds.swift" 2>>"$out/swift.err" | head -n 1 || true)
+            echo "$1: ${v:-(量不到視窗)}" | tee -a "$out/window.txt"
+            read -r x y w h vx vy vw vh <<< "${v:-}" || true
+          }
+          system_profiler SPDisplaysDataType > "$out/display.txt" 2>&1 || true
+
+          seed 3000 2000 0 25
+          open -n --stdout "$out/stdout.log" --stderr "$out/stderr.log" "$app"
+          sleep 20
+          screencapture -x "$out/macos.png"
+          bounds "上次 3000×2000(應縮放置中)"
+          if [ -z "${vh:-}" ]; then
+            fail "情境 1 量不到視窗位置(見 swift.err)"
+          elif [ "$x" -lt "$vx" ] || [ "$y" -lt "$vy" ] || [ $((x + w)) -gt $((vx + vw)) ] || [ $((y + h)) -gt $((vy + vh)) ]; then
+            fail "情境 1 視窗超出可用區域:$x,$y ${w}x$h,可用區域 $vx,$vy ${vw}x$vh"
+          elif [ $(( (x - vx) - (vx + vw - x - w) )) -gt 2 ] || [ $(( (vx + vw - x - w) - (x - vx) )) -gt 2 ]; then
+            fail "情境 1 視窗沒有水平置中:$x,$y ${w}x$h"
+          fi
+          if ! pgrep -fl "$app/Contents/MacOS/" > "$out/processes-large.txt"; then
+            echo "情境 1 找不到 App 行程(可能已閃退)" | tee "$out/processes-large.txt"
+            exit 1
+          fi
+          pkill -f "$app/Contents/MacOS/"
+          sleep 3
+
+          seed 900 560 40 60
+          open -n --stdout "$out/stdout-small.log" --stderr "$out/stderr-small.log" "$app"
+          sleep 15
+          screencapture -x "$out/macos-small.png"
+          bounds "上次 900×560 於 (40,60)(應原樣保留)"
+          if [ -z "${vh:-}" ]; then
+            fail "情境 2 量不到視窗位置(見 swift.err)"
+          elif [ "$x" -ne 40 ] || [ "$y" -ne 60 ] || [ "$w" -ne 900 ]; then
+            fail "情境 2 使用者存的位置 / 寬度被改掉:$x,$y ${w}x$h(應為 40,60 寬 900)"
+          fi
+          log show --last 3m --style compact --predicate 'process == "kefu"' > "$out/system.log" 2>&1 || true
+          ls -la ~/Library/Logs/DiagnosticReports > "$out/crash-reports.txt" 2>&1 || true
+          if ! pgrep -fl "$app/Contents/MacOS/" > "$out/processes.txt"; then
+            echo "找不到 App 行程(可能已閃退)" | tee "$out/processes.txt"
+            exit 1
+          fi
+          exit "$failed"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-macos
+          path: smoke/
+          if-no-files-found: warn
+          retention-days: 14
+
+  smoke-windows:
+    name: smoke (windows)
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: kefu-desktop-windows-x64
+          path: pkg
+      - name: 靜默安裝 NSIS、啟動 App、截圖
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:GITHUB_WORKSPACE 'smoke'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $setup = Get-ChildItem pkg -Filter '*-setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw '找不到 NSIS 安裝檔' }
+          $inst = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          "installer: $($setup.Name) exit=$($inst.ExitCode)" | Tee-Object -FilePath (Join-Path $out 'install.log')
+          # NSIS installMode=currentUser 預設裝在 %LOCALAPPDATA%\kefu
+          $candidates = @(
+            (Join-Path $env:LOCALAPPDATA 'kefu\kefu.exe'),
+            (Join-Path $env:ProgramFiles 'kefu\kefu.exe')
+          )
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            $exe = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles -Filter 'kefu.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $exe) { throw '安裝後找不到 kefu.exe' }
+          "exe: $exe" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          # window-state 還原情境:上次在大螢幕上最大化(一般尺寸 1800×1000)→ 這台小螢幕上仍要最大化
+          # (縮放 / 置中會把最大化取消,所以已最大化時不可再縮);使用者再按「還原」時,
+          # 視窗的可見範圍要在可用區域內(Windows 會把還原後的位置放在可用區域)。結果記在 window.txt
+          $stateDir = Join-Path $env:APPDATA 'cc.kf56k.kefu'
+          New-Item -ItemType Directory -Force $stateDir | Out-Null
+          '{"main":{"width":1800,"height":1000,"x":-8,"y":-8,"prev_x":60,"prev_y":40,"maximized":true,"visible":true,"decorated":true,"fullscreen":false}}' |
+            Set-Content -Path (Join-Path $stateDir '.window-state.json') -Encoding ascii -NoNewline
+          $problems = @()
+          $app = Start-Process -FilePath $exe -PassThru `
+            -RedirectStandardOutput (Join-Path $out 'stdout.log') `
+            -RedirectStandardError (Join-Path $out 'stderr.log')
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          function Save-Screen([string]$name) {
+            $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+            $bmp.Save((Join-Path $out $name), [System.Drawing.Imaging.ImageFormat]::Png)
+            $g.Dispose(); $bmp.Dispose()
+          }
+          # 全新 runner 上 WebView2 首次啟動偶爾超過 20 秒才畫出頁面:20 秒截一張、45 秒再截最終畫面
+          Start-Sleep -Seconds 20
+          Save-Screen 'windows-20s.png'
+          Start-Sleep -Seconds 25
+          $app.Refresh()
+          "pid=$($app.Id) hasExited=$($app.HasExited)" | Tee-Object -FilePath (Join-Path $out 'process.txt')
+          Save-Screen 'windows.png'
+          try {
+            Add-Type -Namespace KefuSmoke -Name Win32 -MemberDefinition @'
+          [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
+          [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+          [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+          [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+          '@
+            $hwnd = $app.MainWindowHandle
+            $wa = [System.Windows.Forms.Screen]::FromHandle($hwnd).WorkingArea
+            function Get-WindowState {
+              $rect = New-Object KefuSmoke.Win32+RECT
+              [void][KefuSmoke.Win32]::GetWindowRect($hwnd, [ref]$rect)
+              [pscustomobject]@{ Zoomed = [KefuSmoke.Win32]::IsZoomed($hwnd); Rect = $rect }
+            }
+            function Format-WindowState($label, $st) {
+              "${label}: maximized=$($st.Zoomed) rect=($($st.Rect.Left),$($st.Rect.Top))-($($st.Rect.Right),$($st.Rect.Bottom))" +
+                " 可用區域=($($wa.Left),$($wa.Top))-($($wa.Right),$($wa.Bottom))"
+            }
+            $before = Get-WindowState
+            [void][KefuSmoke.Win32]::ShowWindow($hwnd, 9)   # SW_RESTORE:使用者按「還原」
+            Start-Sleep -Seconds 3
+            $after = Get-WindowState
+            Save-Screen 'windows-restored.png'
+            $msg = @(
+              (Format-WindowState '上次最大化(應仍最大化)' $before),
+              (Format-WindowState '按還原後(可見範圍應在可用區域內)' $after)
+            )
+            if (-not $before.Zoomed) { $problems += '上次是最大化,啟動後卻不是最大化' }
+            # GetWindowRect 含 Windows 看不見的縮放邊框(約 8px),所以容許超出 8px
+            $r = $after.Rect
+            if ($after.Zoomed -or $r.Left -lt $wa.Left - 8 -or $r.Top -lt $wa.Top - 8 -or
+                $r.Right -gt $wa.Right + 8 -or $r.Bottom -gt $wa.Bottom + 8) {
+              $problems += '按還原後視窗超出可用區域(或仍是最大化)'
+            }
+          } catch {
+            $msg = "視窗狀態檢查失敗:$_"
+            $problems += $msg
+          }
+          $msg | Tee-Object -FilePath (Join-Path $out 'window.txt')
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 1, 2; StartTime = (Get-Date).AddMinutes(-10) } -ErrorAction SilentlyContinue |
+            Format-List TimeCreated, ProviderName, Id, Message | Out-File (Join-Path $out 'application-errors.txt')
+          if ($app.HasExited) { throw "kefu.exe 已結束(exit=$($app.ExitCode)),可能啟動失敗" }
+          Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          if ($problems) { throw ($problems -join ';') }
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-windows
+          path: smoke/
+          if-no-files-found: warn
+          retention-days: 14
+
+  # ---------- E2E:Windows 上用 tauri-driver + msedgedriver,伺服器設定 → 登入 → 工作台(暫不擋流程) ----------
+  # macOS 沒有 WKWebView 的 WebDriver,只跑 Windows。帳密來自 secrets E2E_SERVER / E2E_EMAIL / E2E_PASSWORD;
+  # 沒設定(例如 fork 的 PR)時整個跳過。測試程式在 e2e/desktop/,說明見 e2e/README.md。
+
+  e2e-windows:
+    name: e2e (windows login)
+    # 自行建置 E2E 專用版(不用正式安裝檔),故不必等 build job
+    if: ${{ !cancelled() }}
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 50
+    env:
+      E2E_SERVER: ${{ secrets.E2E_SERVER }}
+      E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      # run-windows.ps1 模式 0:E2E 專用版自開此埠,直接附加(不走 tauri-driver)
+      KEFU_E2E_BUILTIN_PORT: '9222'
+    steps:
+      - name: 檢查 E2E secrets
+        id: cfg
+        shell: bash
+        run: |
+          if [[ -n "$E2E_EMAIL" && -n "$E2E_PASSWORD" ]]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::未設定 E2E_EMAIL / E2E_PASSWORD,跳過 E2E"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.cfg.outputs.ok == 'true'
+
+      - uses: actions/setup-node@v7
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        if: steps.cfg.outputs.ok == 'true'
+
+      - uses: Swatinem/rust-cache@v2
+        if: steps.cfg.outputs.ok == 'true'
+        with:
+          workspaces: 'frontend/src-tauri -> target'
+          key: e2e-windows
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: npm ci(frontend)
+        if: steps.cfg.outputs.ok == 'true'
+        working-directory: frontend
+        run: npm ci
+
+      # WebView2 Runtime 只接受「宿主程式自己」傳入的瀏覽器參數(環境變數 / 登錄覆寫一律無效,
+      # 見 e2e/README.md),所以另建一份不發佈的 E2E 專用版:以 --config 覆寫主視窗 additionalBrowserArgs
+      # 開 DevTools 埠 9222。覆寫會取代 wry 預設參數,故保留預設的三個 --disable-features。
+      - name: 建置 E2E 專用版(App 自開 DevTools 埠;僅供 CI,不發佈)
+        if: steps.cfg.outputs.ok == 'true'
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            const c = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+            const args = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --remote-debugging-port=9222";
+            const windows = c.app.windows.map((w, i) => (i === 0 ? { ...w, additionalBrowserArgs: args } : w));
+            fs.writeFileSync("src-tauri/tauri.e2e.conf.json", JSON.stringify({ app: { windows } }, null, 1));
+          '
+          npx tauri build --bundles nsis --config src-tauri/tauri.e2e.conf.json
+          mkdir -p ../pkg
+          cp src-tauri/target/release/bundle/nsis/*-setup.exe ../pkg/
+          ls -la ../pkg
+
+      - name: npm ci(selenium-webdriver)
+        if: steps.cfg.outputs.ok == 'true'
+        working-directory: e2e/desktop
+        run: npm ci
+
+
+      - name: 靜默安裝 NSIS、準備對應 WebView2 版本的 msedgedriver
+        if: steps.cfg.outputs.ok == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:GITHUB_WORKSPACE 'e2e-out'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $setup = Get-ChildItem pkg -Filter '*-setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw '找不到 NSIS 安裝檔' }
+          $inst = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          "installer: $($setup.Name) exit=$($inst.ExitCode)" | Tee-Object -FilePath (Join-Path $out 'install.log')
+          # NSIS installMode=currentUser 預設裝在 %LOCALAPPDATA%\kefu
+          $candidates = @(
+            (Join-Path $env:LOCALAPPDATA 'kefu\kefu.exe'),
+            (Join-Path $env:ProgramFiles 'kefu\kefu.exe')
+          )
+          $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $exe) {
+            $exe = Get-ChildItem -Path $env:LOCALAPPDATA, $env:ProgramFiles -Filter 'kefu.exe' -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+              Select-Object -First 1 -ExpandProperty FullName
+          }
+          if (-not $exe) { throw '安裝後找不到 kefu.exe' }
+          "exe: $exe" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          "KEFU_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          # WebView2 Runtime 版本(msedgedriver 必須同版)
+          $guid = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $keys = @(
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$guid",
+            "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$guid",
+            "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$guid"
+          )
+          $wv = $keys | ForEach-Object { (Get-ItemProperty $_ -ErrorAction SilentlyContinue).pv } | Where-Object { $_ -and $_ -ne '0.0.0.0' } | Select-Object -First 1
+          "webview2: $wv" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          $drvDir = Join-Path $env:RUNNER_TEMP 'msedgedriver'
+          New-Item -ItemType Directory -Force $drvDir | Out-Null
+          $driver = $null
+          if ($wv) {
+            foreach ($base in 'https://msedgedriver.microsoft.com', 'https://msedgedriver.azureedge.net') {
+              try {
+                $zip = Join-Path $drvDir 'edgedriver.zip'
+                Invoke-WebRequest -Uri "$base/$wv/edgedriver_win64.zip" -OutFile $zip -UseBasicParsing
+                Expand-Archive $zip -DestinationPath $drvDir -Force
+                $driver = Join-Path $drvDir 'msedgedriver.exe'
+                "msedgedriver: $base/$wv" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+                break
+              } catch { "下載失敗 $base/$wv : $($_.Exception.Message)" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append }
+            }
+          }
+          if (-not $driver -or -not (Test-Path $driver)) {
+            # 備援:runner 預裝、對應 Edge 瀏覽器版本的 msedgedriver(通常與 WebView2 同版)
+            $driver = Join-Path $env:EDGEWEBDRIVER 'msedgedriver.exe'
+            "msedgedriver(備援,runner 預裝): $driver" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          }
+          & $driver --version | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          "MSEDGEDRIVER=$driver" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: tauri-driver:伺服器設定 → 登入 → 工作台
+        if: steps.cfg.outputs.ok == 'true'
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE 'e2e-out'
+          $env:E2E_OUT = $out
+          # 診斷:啟動期間每 5 秒記錄 kefu / WebView2 行程與命令列(看 remote-debugging 與 user-data-dir 參數)
+          $procLog = Join-Path $out 'processes.log'
+          $watch = Start-Job -ArgumentList $procLog -ScriptBlock {
+            param($f)
+            for ($i = 0; $i -lt 60; $i++) {
+              "---- $(Get-Date -Format o)" | Out-File $f -Append -Encoding utf8
+              Get-CimInstance Win32_Process |
+                Where-Object { $_.Name -match 'kefu|msedgewebview2|msedgedriver|tauri-driver' } |
+                ForEach-Object { "$($_.ProcessId) $($_.ParentProcessId) $($_.Name) :: $($_.CommandLine)" } |
+                Out-File $f -Append -Encoding utf8
+              Start-Sleep -Seconds 5
+            }
+          }
+
+          # tauri-driver 優先;建不起 session 時改用附加模式(說明見腳本開頭與 e2e/README.md)
+          & e2e/desktop/run-windows.ps1
+          $rc = $LASTEXITCODE
+
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+          $bmp.Save((Join-Path $out 'desktop-final.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+          $g.Dispose(); $bmp.Dispose()
+          Stop-Job $watch -ErrorAction SilentlyContinue
+          Get-Process kefu, msedgedriver -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-ChildItem (Join-Path $env:LOCALAPPDATA 'cc.kf56k.kefu') -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+            Select-Object FullName | Out-File (Join-Path $out 'webview-data-dir.txt') -Encoding utf8
+          exit $rc
+
+      # 遮蔽沒有成功跑完就不上傳(repo 公開,artifact 任何人都能下載)
+      - name: 遮蔽記錄裡的帳密
+        id: redact
+        if: always() && steps.cfg.outputs.ok == 'true'
+        env:
+          PYTHONUTF8: '1'
+        run: python e2e/scripts/redact.py e2e-out
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.redact.outcome == 'success'
+        with:
+          name: e2e-windows
+          path: e2e-out/
+          if-no-files-found: warn
+          retention-days: 7

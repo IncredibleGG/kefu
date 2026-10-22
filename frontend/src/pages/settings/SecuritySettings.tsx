@@ -20,7 +20,9 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "react-router-dom";
 import { ApiError } from "@/api/client";
+import { saveFile } from "@/lib/platform";
 import { securityApi } from "@/api/security";
 
 /** 把多行 / 逗號分隔的文字解析為白名單條目(去空白、去空行)。 */
@@ -150,12 +152,8 @@ export function SecuritySettings() {
         ],
         { type: "text/plain;charset=utf-8" },
       );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "kefu-recovery-codes.txt";
-      a.click();
-      URL.revokeObjectURL(url);
+      // 交給平台層存檔(web:<a download>;桌面:存檔對話框;手機:分享面板)
+      void saveFile(blob, "kefu-recovery-codes.txt").catch(() => undefined);
     } catch {
       /* 下載不可用時忽略 */
     }
@@ -324,9 +322,9 @@ export function SecuritySettings() {
                     {t("security.recoveryNeed2fa", {
                       defaultValue: "請先在「兩步驗證」分頁啟用 2FA,才能產生備援碼。",
                     })}{" "}
-                    <a href="?tab=2fa" className="text-brand underline-offset-4 hover:underline">
+                    <Link to="?tab=2fa" className="text-brand underline-offset-4 hover:underline">
                       {t("security.recoverySetupLink", { defaultValue: "前往設定 2FA" })}
-                    </a>
+                    </Link>
                   </span>
                 </div>
               ) : (

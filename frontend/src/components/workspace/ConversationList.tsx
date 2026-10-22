@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { Search, Bot, Tag as TagIcon, X, Check, AlarmClock, Clock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +24,7 @@ import { fetchChannelMap, mapSession, type RawPaged, type RawSession } from "@/a
 import { useNotify } from "@/stores/notify";
 import { channelMeta } from "@/lib/channels";
 import { cn, hhmm, initials, fmtDuration } from "@/lib/utils";
+import { routerCanGoBack } from "@/lib/mobile/backButton";
 import type { Session, SessionTab, Tag } from "@/types";
 
 /** 後端會話列摘要:含分流體驗欄位(mapSession 不保留,故直接由原始回應取用並疊加)。 */
@@ -31,18 +38,77 @@ type RawSessionFull = RawSession & {
 /** 會話列項目:前端 Session + 原始 status / snoozed_until(供延後標示與過濾)。 */
 type InboxSession = Session & { rawStatus: string; snoozedUntil: string | null };
 
-/** 延後時長選項(分鐘)。 */
-const SNOOZE_DURATIONS: { minutes: number; key: string; fallback: string }[] = [
+/** 延後時長選項(分鐘);手機對話頁的「⋯ 更多 → 延後」共用。 */
+export const SNOOZE_DURATIONS: { minutes: number; key: string; fallback: string }[] = [
   { minutes: 30, key: "conv.duration30m", fallback: "30 分鐘" },
   { minutes: 60, key: "conv.duration1h", fallback: "1 小時" },
   { minutes: 180, key: "conv.duration3h", fallback: "3 小時" },
   { minutes: 1440, key: "conv.duration1d", fallback: "1 天" },
 ];
 
+/** 從清單(/workspace,未開會話)點開會話時寫入的 history state:上一筆歷史就是清單。 */
+const FROM_INBOX_KEY = "fromInbox";
+
+/**
+ * 目前這筆歷史是否「由清單點開、且上一筆就是清單」:結束會話時可直接 navigate(-1) 退回,
+ * 不必 replace 成第二筆 /workspace(否則下一次返回看似沒反應)。
+ * 開著 ?panel= 的那筆(push 時會帶上同一個 state)不算,改走 replace。
+ */
+export function openedFromInbox(state: unknown, search: string): boolean {
+  const flag = !!state && typeof state === "object" && (state as Record<string, unknown>)[FROM_INBOX_KEY] === true;
+  return flag && !new URLSearchParams(search).has("panel") && routerCanGoBack() === true;
+}
+
+function invalidateSessionLists(qc: QueryClient) {
+  qc.invalidateQueries({ queryKey: ["sessions-inbox"] });
+  qc.invalidateQueries({ queryKey: ["sessions"] });
+}
+
+/** 延後會話(稍後處理);無論成敗都刷新會話列。 */
+export async function snoozeSession(qc: QueryClient, id: string, minutes: number): Promise<void> {
+  try {
+    await apiFetch(`/api/v1/conversation/sessions/${id}/snooze`, {
+      method: "POST",
+      body: { duration_minutes: minutes },
+    });
+  } finally {
+    invalidateSessionLists(qc);
+  }
+}
+
+/** 取消延後;無論成敗都刷新會話列。 */
+export async function unsnoozeSession(qc: QueryClient, id: string): Promise<void> {
+  try {
+    await apiFetch(`/api/v1/conversation/sessions/${id}/unsnooze`, {
+      method: "POST",
+      body: {},
+    });
+  } finally {
+    invalidateSessionLists(qc);
+  }
+}
+
+/** 從會話列快取(["sessions-inbox", …])找出某會話的延後到期時間;不在快取內回 null。 */
+export function findInboxSnoozedUntil(qc: QueryClient, id: string): string | null {
+  for (const [, data] of qc.getQueriesData<InfiniteData<{ items: InboxSession[] }>>({
+    queryKey: ["sessions-inbox"],
+  })) {
+    for (const page of data?.pages ?? []) {
+      const hit = page.items.find((s) => s.id === id);
+      if (hit) return hit.snoozedUntil;
+    }
+  }
+  return null;
+}
+
 const TABS: SessionTab[] = ["mine", "unassigned", "queue", "online"];
 const PAGE_SIZE = 30;
 
-export function ConversationList() {
+/**
+ * @param covered 手機上對話區疊在清單上方時為 true:清單保持掛載(保留捲動 / 分頁),
+ *                但設為 inert,避免螢幕閱讀器與鍵盤焦點進入被蓋住的清單。
+ */
+export function ConversationList({ covered = false }: { covered?: boolean } = {}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { sessionId } = useParams();
@@ -139,29 +205,6 @@ export function ConversationList() {
     };
   }, [qc]);
 
-  async function snoozeSession(id: string, minutes: number) {
-    try {
-      await apiFetch(`/api/v1/conversation/sessions/${id}/snooze`, {
-        method: "POST",
-        body: { duration_minutes: minutes },
-      });
-    } finally {
-      qc.invalidateQueries({ queryKey: ["sessions-inbox"] });
-      qc.invalidateQueries({ queryKey: ["sessions"] });
-    }
-  }
-  async function unsnoozeSession(id: string) {
-    try {
-      await apiFetch(`/api/v1/conversation/sessions/${id}/unsnooze`, {
-        method: "POST",
-        body: {},
-      });
-    } finally {
-      qc.invalidateQueries({ queryKey: ["sessions-inbox"] });
-      qc.invalidateQueries({ queryKey: ["sessions"] });
-    }
-  }
-
   // 攤平所有已載入分頁,再依「顯示/隱藏已延後」過濾
   const allItems = sessionsQuery.data?.pages.flatMap((p) => p.items) ?? [];
   const items = allItems.filter((s) => showSnoozed || s.rawStatus !== "snoozed");
@@ -175,14 +218,19 @@ export function ConversationList() {
   }
 
   return (
-    <div className="flex w-80 shrink-0 flex-col border-r border-border bg-card">
+    // 手機(< md)全寬;桌面維持 w-80。手機點會話後由 ConversationView 疊在上方(清單保持掛載)
+    <div
+      inert={covered || undefined}
+      className="flex w-full shrink-0 flex-col border-r border-border bg-card md:w-80 max-md:border-r-0"
+    >
       {/* Tabs */}
       <div className="p-2.5">
         <Tabs value={tab} onValueChange={(v) => setTab(v as SessionTab)}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-4 pointer-coarse:h-12">
             {TABS.map((tb) => (
-              <TabsTrigger key={tb} value={tb}>
-                {t(`workspace.tabs.${tb}`)}
+              <TabsTrigger key={tb} value={tb} className="max-md:min-w-0 pointer-coarse:h-10">
+                {/* 手機上過長的語系(如德文)省略號截斷,不撐破四欄 */}
+                <span className="max-md:min-w-0 max-md:truncate">{t(`workspace.tabs.${tb}`)}</span>
               </TabsTrigger>
             ))}
           </TabsList>
@@ -196,14 +244,14 @@ export function ConversationList() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={t("workspace.searchPlaceholder")}
-            className="h-8 pl-8 pr-7"
+            className="h-8 pl-8 pr-7 pointer-coarse:h-10 pointer-coarse:pr-10"
           />
           {q && (
             <button
               type="button"
               onClick={() => setQ("")}
               aria-label={t("conv.clearSearch", { defaultValue: "清除搜尋" })}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground pointer-coarse:right-0 pointer-coarse:flex pointer-coarse:size-10 pointer-coarse:items-center pointer-coarse:justify-center"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -215,7 +263,7 @@ export function ConversationList() {
               size="icon-sm"
               variant={tagFilter ? "default" : "outline"}
               aria-label={t("workspace.conversationList.filterByTag")}
-              className="shrink-0"
+              className="shrink-0 pointer-coarse:size-10"
             >
               <TagIcon className="h-4 w-4" />
             </Button>
@@ -234,7 +282,7 @@ export function ConversationList() {
                   <button
                     key={tg.id}
                     onClick={() => setTagFilter(tagFilter?.id === tg.id ? undefined : tg)}
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent pointer-coarse:py-2.5"
                   >
                     <span
                       className="h-2.5 w-2.5 shrink-0 rounded-full bg-brand"
@@ -259,8 +307,13 @@ export function ConversationList() {
           <Button
             size="icon-sm"
             variant={showSnoozed ? "outline" : "default"}
-            className="shrink-0"
+            className="shrink-0 pointer-coarse:size-10"
             aria-pressed={!showSnoozed}
+            aria-label={
+              showSnoozed
+                ? t("conv.hideSnoozed", { defaultValue: "隱藏已延後" })
+                : t("conv.showSnoozed", { defaultValue: "顯示已延後" })
+            }
             onClick={() => setShowSnoozed((v) => !v)}
           >
             {showSnoozed ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
@@ -270,11 +323,16 @@ export function ConversationList() {
       {/* 已選標籤過濾條 */}
       {tagFilter && (
         <div className="flex items-center gap-1.5 px-2.5 pb-2">
-          <span className="inline-flex items-center gap-1 rounded bg-brand/10 px-1.5 py-0.5 text-[11px] text-brand">
+          <span className="inline-flex items-center gap-1 rounded bg-brand/10 px-1.5 py-0.5 text-[11px] text-brand pointer-coarse:py-0 pointer-coarse:pe-0 pointer-coarse:text-xs">
             <TagIcon className="h-3 w-3" />
             {tagFilter.name}
-            <button onClick={() => setTagFilter(undefined)} aria-label={t("workspace.conversationList.clearFilter")}>
-              <X className="h-3 w-3" />
+            {/* 觸控:清除鈕放大到 40px 點擊區(原 12px 難以點中) */}
+            <button
+              onClick={() => setTagFilter(undefined)}
+              aria-label={t("workspace.conversationList.clearFilter")}
+              className="pointer-coarse:flex pointer-coarse:size-10 pointer-coarse:items-center pointer-coarse:justify-center"
+            >
+              <X className="h-3 w-3 pointer-coarse:h-3.5 pointer-coarse:w-3.5" />
             </button>
           </span>
         </div>
@@ -294,15 +352,18 @@ export function ConversationList() {
                 <SessionRow
                   session={s}
                   active={s.id === sessionId}
-                  onClick={() => navigate(`/workspace/${s.id}`)}
+                  onClick={() =>
+                    navigate(`/workspace/${s.id}`, sessionId ? undefined : { state: { [FROM_INBOX_KEY]: true } })
+                  }
                   snoozedUntil={s.snoozedUntil}
                 />
-                {/* snooze 控制:overlay 為 row 按鈕的同層兄弟(避免巢狀 button) */}
-                <div className="absolute right-2 top-2">
+                {/* snooze 控制:overlay 為 row 按鈕的同層兄弟(避免巢狀 button)。
+                    觸控裝置沒有懸停:改為常駐、垂直置中於列尾(列本身預留右側空間,不蓋住時間)。 */}
+                <div className="absolute right-2 top-2 pointer-coarse:right-1 pointer-coarse:top-1/2 pointer-coarse:-translate-y-1/2">
                   <SnoozeControl
                     snoozed={!!s.snoozedUntil}
-                    onSnooze={(m) => snoozeSession(s.id, m)}
-                    onUnsnooze={() => unsnoozeSession(s.id)}
+                    onSnooze={(m) => void snoozeSession(qc, s.id, m)}
+                    onUnsnooze={() => void unsnoozeSession(qc, s.id)}
                   />
                 </div>
               </div>
@@ -313,7 +374,7 @@ export function ConversationList() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full gap-1.5"
+                  className="w-full gap-1.5 pointer-coarse:h-10"
                   disabled={isFetchingNextPage}
                   onClick={() => void fetchNextPage()}
                 >
@@ -370,7 +431,8 @@ function SessionRow({
     <button
       onClick={onClick}
       className={cn(
-        "flex w-full items-start gap-2.5 border-l-2 px-3 py-2.5 text-left transition-colors",
+        // pointer-coarse:pr-12:為常駐的延後鈕(40px)預留列尾空間
+        "flex w-full items-start gap-2.5 border-l-2 px-3 py-2.5 text-left transition-colors pointer-coarse:pr-12",
         active ? "border-brand bg-brand/8" : "border-transparent hover:bg-accent",
       )}
     >
@@ -459,13 +521,15 @@ function SnoozeControl({
           size="icon-sm"
           variant={snoozed ? "default" : "secondary"}
           className={cn(
-            "h-6 w-6 shadow-sm transition-opacity",
+            "h-6 w-6 shadow-sm transition-opacity pointer-coarse:size-10 pointer-coarse:opacity-100",
             snoozed || open ? "opacity-100" : "opacity-0 group-hover/row:opacity-100",
+            // 觸控常駐顯示時,未延後的鈕用淡色無底,避免每列都是一顆實心按鈕
+            !snoozed && "pointer-coarse:bg-transparent pointer-coarse:text-muted-foreground pointer-coarse:shadow-none",
           )}
           aria-label={t("conv.snoozeTooltip", { defaultValue: "稍後處理(延後)" })}
           onClick={(e) => e.stopPropagation()}
         >
-          <AlarmClock className="h-3.5 w-3.5" />
+          <AlarmClock className="h-3.5 w-3.5 pointer-coarse:h-4 pointer-coarse:w-4" />
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-40 p-1" onClick={(e) => e.stopPropagation()}>
@@ -480,7 +544,7 @@ function SnoozeControl({
               onSnooze(d.minutes);
               setOpen(false);
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-accent pointer-coarse:py-2.5"
           >
             <AlarmClock className="h-3.5 w-3.5 text-muted-foreground" />
             {t(d.key, { defaultValue: d.fallback })}
@@ -493,7 +557,7 @@ function SnoozeControl({
               onUnsnooze();
               setOpen(false);
             }}
-            className="mt-0.5 flex w-full items-center gap-2 rounded-md border-t border-border px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent"
+            className="mt-0.5 flex w-full items-center gap-2 rounded-md border-t border-border px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent pointer-coarse:py-2.5"
           >
             <X className="h-3.5 w-3.5" />
             {t("conv.unsnooze", { defaultValue: "取消延後" })}

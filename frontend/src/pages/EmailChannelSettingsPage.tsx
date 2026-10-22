@@ -298,8 +298,8 @@ function EmailConfigDialog({ channel, onClose }: { channel: RawChannel | null; o
               <p className="flex items-center gap-1.5 text-sm font-medium">
                 <Inbox className="h-4 w-4 text-brand" /> {t("config.email.imapReceive")}
               </p>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2 space-y-1.5">
+              <div className="grid grid-cols-3 gap-3 max-sm:grid-cols-1">
+                <div className="col-span-2 space-y-1.5 max-sm:col-span-1">
                   <Label>{t("config.email.server")}</Label>
                   <Input value={imap.host} onChange={(e) => setImap({ ...imap, host: e.target.value })} placeholder="imap.gmail.com" />
                 </div>
@@ -308,7 +308,7 @@ function EmailConfigDialog({ channel, onClose }: { channel: RawChannel | null; o
                   <Input value={imap.port} onChange={(e) => setImap({ ...imap, port: e.target.value })} placeholder="993" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
                 <div className="space-y-1.5">
                   <Label>{t("config.email.account")}</Label>
                   <Input value={imap.user} onChange={(e) => setImap({ ...imap, user: e.target.value })} placeholder="support@example.com" />
@@ -318,12 +318,12 @@ function EmailConfigDialog({ channel, onClose }: { channel: RawChannel | null; o
                   <Input type="password" value={imap.pass} onChange={(e) => setImap({ ...imap, pass: e.target.value })} placeholder={t("config.email.passwordPlaceholder")} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 items-center gap-3">
+              <div className="grid grid-cols-2 items-center gap-3 max-sm:grid-cols-1">
                 <div className="space-y-1.5">
                   <Label>{t("config.email.folder")}</Label>
                   <Input value={imap.folder} onChange={(e) => setImap({ ...imap, folder: e.target.value })} placeholder="INBOX" />
                 </div>
-                <label className="mt-5 flex items-center gap-2 text-sm">
+                <label className="mt-5 flex items-center gap-2 text-sm max-sm:mt-0">
                   <Switch checked={imap.ssl} onCheckedChange={(v) => setImap({ ...imap, ssl: v })} />
                   {t("config.email.useSsl")}
                 </label>
@@ -335,8 +335,8 @@ function EmailConfigDialog({ channel, onClose }: { channel: RawChannel | null; o
               <p className="flex items-center gap-1.5 text-sm font-medium">
                 <Send className="h-4 w-4 text-brand" /> {t("config.email.smtpSend")}
               </p>
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2 space-y-1.5">
+              <div className="grid grid-cols-3 gap-3 max-sm:grid-cols-1">
+                <div className="col-span-2 space-y-1.5 max-sm:col-span-1">
                   <Label>{t("config.email.server")}</Label>
                   <Input value={smtp.host} onChange={(e) => setSmtp({ ...smtp, host: e.target.value })} placeholder="smtp.gmail.com" />
                 </div>
@@ -345,7 +345,7 @@ function EmailConfigDialog({ channel, onClose }: { channel: RawChannel | null; o
                   <Input value={smtp.port} onChange={(e) => setSmtp({ ...smtp, port: e.target.value })} placeholder="587" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
                 <div className="space-y-1.5">
                   <Label>{t("config.email.account")}</Label>
                   <Input value={smtp.user} onChange={(e) => setSmtp({ ...smtp, user: e.target.value })} placeholder="support@example.com" />
@@ -355,12 +355,12 @@ function EmailConfigDialog({ channel, onClose }: { channel: RawChannel | null; o
                   <Input type="password" value={smtp.pass} onChange={(e) => setSmtp({ ...smtp, pass: e.target.value })} placeholder={t("config.email.passwordPlaceholder")} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 items-center gap-3">
+              <div className="grid grid-cols-2 items-center gap-3 max-sm:grid-cols-1">
                 <div className="space-y-1.5">
                   <Label>{t("config.email.fromLabel")}</Label>
                   <Input value={smtp.from} onChange={(e) => setSmtp({ ...smtp, from: e.target.value })} placeholder={t("config.email.fromPlaceholder")} />
                 </div>
-                <label className="mt-5 flex items-center gap-2 text-sm">
+                <label className="mt-5 flex items-center gap-2 text-sm max-sm:mt-0">
                   <Switch checked={smtp.tls} onCheckedChange={(v) => setSmtp({ ...smtp, tls: v })} />
                   {t("config.email.useTls")}
                 </label>

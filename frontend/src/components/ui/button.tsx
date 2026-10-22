@@ -15,12 +15,13 @@ const buttonVariants = cva(
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
         link: "text-brand underline-offset-4 hover:underline",
       },
+      // pointer-coarse:主要輸入為觸控(手機 / 平板)時,點擊區至少 40px;滑鼠 / 觸控板裝置不變
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
+        default: "h-9 px-4 py-2 pointer-coarse:h-10",
+        sm: "h-8 rounded-md px-3 text-xs pointer-coarse:h-10",
         lg: "h-10 rounded-md px-6",
-        icon: "h-9 w-9",
-        "icon-sm": "h-8 w-8",
+        icon: "h-9 w-9 pointer-coarse:size-10",
+        "icon-sm": "h-8 w-8 pointer-coarse:size-10",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import { useTenantSettings } from "@/api/hooks";
 import { settingsApi } from "@/api/endpoints";
 import { cn } from "@/lib/utils";
+import { fileUrl } from "@/lib/server";
 import type { BusinessHours, PrechatField, TenantSettings, WidgetTheme } from "@/types";
 
 const SELECT_CLS =
@@ -591,7 +592,7 @@ function WidgetPreview({ theme }: { theme: WidgetTheme }) {
     <div className="overflow-hidden rounded-xl border border-border shadow-lg">
       <div className="flex items-center gap-2.5 px-4 py-3 text-white" style={{ backgroundColor: color }}>
         {theme.logo_url ? (
-          <img src={theme.logo_url} alt="logo" className="h-8 w-8 rounded-full bg-white/20 object-cover" />
+          <img src={fileUrl(theme.logo_url) ?? undefined} alt="logo" className="h-8 w-8 rounded-full bg-white/20 object-cover" />
         ) : (
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-sm font-semibold">{t("config.widget.preview.avatar")}</div>
         )}

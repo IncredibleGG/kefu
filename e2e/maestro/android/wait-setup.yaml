@@ -1,0 +1,36 @@
+# Android 模擬器:等伺服器設定頁出現,處理兩種與 App 無關的模擬器狀況。
+# 1. 系統程式(常見是剛開機的 Pixel Launcher)ANR,「… isn't responding」框蓋住 App,Maestro 看不到底下的設定頁
+#    → 按「Close app」(該程式會自行重啟)。CI 另在跑 Maestro 前設 `hide_error_dialogs` 預防。
+# 2. clearState 後立刻啟動時,系統清除舊工作逾時,連帶殺掉剛啟動的新行程
+#    (logcat:「Destroy timeout of remove-task」→「Killing … remove task」→「failed to attach」),
+#    畫面一直空白 → 重新啟動(不清資料;資料剛清過)。
+# 重啟也會讓 kefu 自己偶發的首次啟動閃退過關,所以 CI 會把重啟次數、閃退與 ANR 記錄標成 warning
+# (android.yml 的 collect);設定頁始終不出現時流程照樣失敗。
+appId: cc.kf56k.kefu
+---
+# 冷啟動可能很慢:第一次等久一點,不要誤殺還在啟動中的 App
+- extendedWaitUntil:
+    visible: "測試連線|Close app"
+    timeout: 90000
+    optional: true
+- repeat:
+    times: 3
+    commands:
+      - runFlow:
+          when:
+            visible:
+              id: "android:id/aerr_close"
+          commands:
+            - tapOn:
+                id: "android:id/aerr_close"
+            - waitForAnimationToEnd
+      - runFlow:
+          when:
+            notVisible: "測試連線|Close app"
+          commands:
+            - launchApp:
+                stopApp: true
+      - extendedWaitUntil:
+          visible: "測試連線|Close app"
+          timeout: 45000
+          optional: true

@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import asyncio
 import logging
+import re
 import uuid
 
 from app.api.v1 import (
@@ -42,6 +43,7 @@ from app.api.v1 import (
     onboarding,
     platform,
     playground,
+    public_info,
     proactive,
     quality,
     reporting,
@@ -160,18 +162,107 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=f"{settings.app_name} API", version="0.1.0", lifespan=lifespan)
 
-# CORS 來源由設定驅動(KEFU_CORS_ORIGINS):逗號分隔清單,或 "*" 全開。
-# widget 需跨網域嵌入客戶站點,故預設全開;正式可收緊為白名單。
-_cors = [o.strip() for o in settings.cors_origins.split(",") if o.strip()] or ["*"]
-_allow_all = _cors == ["*"]
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors,
-    # 帶白名單時允許憑證;全開("*")時瀏覽器規範不允許 credentials,故關閉
-    allow_credentials=not _allow_all,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# 原生 App 的固定 origin(docs/NATIVE-CLIENTS.md §2;上線後不可改):
+# macOS tauri://localhost、Windows http(s)://tauri.localhost、iOS capacitor://localhost、
+# Android https://localhost(另含 http://localhost 供開發)。完整比對(fullmatch + ^$),
+# 不放任意 port、不做前綴比對。
+NATIVE_ORIGIN_REGEX = r"^(tauri://localhost|https?://tauri\.localhost|capacitor://localhost|https?://localhost)$"
+
+
+def build_cors_options(cfg=settings) -> dict:
+    """依設定組 CORSMiddleware 參數(抽出為函式以便測試)。
+
+    - ``KEFU_CORS_ORIGINS``:逗號分隔白名單,或 "*" 全開(widget 跨網域嵌入需要,預設全開)。
+    - 白名單模式自動併入原生 origin(NATIVE_ORIGIN_REGEX),與 ``KEFU_CORS_ORIGIN_REGEX`` 以 | 合併。
+    - ``allow_credentials`` 恆為 False:全站只用 Bearer、不用 cookie,不需要憑證模式
+      (也避免白名單模式意外開啟 credentials)。
+    - ``expose_headers``:X-Request-Id(錯誤追蹤)、Content-Disposition(下載檔名)。
+    """
+    origins = [o.strip() for o in (cfg.cors_origins or "").split(",") if o.strip()] or ["*"]
+    allow_all = "*" in origins
+    custom_regex = (cfg.cors_origin_regex or "").strip() or None
+    if allow_all:
+        regex = custom_regex
+    elif custom_regex:
+        regex = f"(?:{NATIVE_ORIGIN_REGEX})|(?:{custom_regex})"
+    else:
+        regex = NATIVE_ORIGIN_REGEX
+    expose = [h.strip() for h in (cfg.cors_expose_headers or "").split(",") if h.strip()]
+    return {
+        "allow_origins": ["*"] if allow_all else origins,
+        "allow_origin_regex": regex,
+        "allow_credentials": False,
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+        "expose_headers": expose,
+    }
+
+
+_cors_options = build_cors_options()
+_cors_regex = re.compile(_cors_options["allow_origin_regex"]) if _cors_options["allow_origin_regex"] else None
+
+
+def _cors_headers_for(request: Request) -> dict[str, str]:
+    """最外層保底 500 用:依請求 Origin 補 CORS 標頭(與 CORSMiddleware 同一判定規則)。"""
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    allowed = "*" in _cors_options["allow_origins"] or origin in _cors_options["allow_origins"]
+    if not allowed and _cors_regex is not None and _cors_regex.fullmatch(origin):
+        allowed = True
+    if not allowed:
+        return {}
+    hdrs = {"Access-Control-Allow-Origin": "*" if "*" in _cors_options["allow_origins"] else origin}
+    if hdrs["Access-Control-Allow-Origin"] != "*":
+        hdrs["Vary"] = "Origin"
+    if _cors_options["expose_headers"]:
+        hdrs["Access-Control-Expose-Headers"] = ", ".join(_cors_options["expose_headers"])
+    return hdrs
+
+
+class CatchAllErrorMiddleware:
+    """純 ASGI 保底:在 CORSMiddleware **內層**攔住未捕獲例外,回 500 統一信封。
+
+    Starlette 的 ``exception_handler(Exception)`` 由最外層 ServerErrorMiddleware 執行,
+    其回應不經 CORSMiddleware → 跨源請求只看到「Failed to fetch」,讀不到錯誤信封與
+    request_id。本 middleware 先於 CORSMiddleware 註冊(= 位於其內層),使 500 回應也
+    經 CORS 加上標頭。回應已開始送出時無法改寫,只能續拋交給外層處理。
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        started = False
+
+        async def send_wrapper(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception:
+            if started:
+                raise
+            request_id = (scope.get("state") or {}).get("request_id")
+            _err_logger.exception(
+                "未捕獲例外 request_id=%s path=%s", request_id, scope.get("path")
+            )
+            response = _envelope_response(
+                500, err("internal_error", "伺服器內部錯誤", request_id), request_id
+            )
+            await response(scope, receive, send)
+
+
+# 註冊順序 = 由內而外:CatchAll 必須先於 CORS 註冊,才會位於 CORS 內層。
+app.add_middleware(CatchAllErrorMiddleware)
+app.add_middleware(CORSMiddleware, **_cors_options)
 
 # 稽核日誌:對變更型請求(2xx)記錄操作者/動作/目標(不讀 body,失敗降級)
 from app.services.audit import AuditMiddleware  # noqa: E402
@@ -316,10 +407,17 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
 
     註:此處理器由最外層 ServerErrorMiddleware 執行(在 RequestIDMiddleware 之外),
     故 request_id 從 request.state 取得,並顯式帶上 X-Request-Id 標頭。
+    一般端點的例外已由 CORS 內層的 CatchAllErrorMiddleware 收斂;能走到這裡的多半是
+    外層 middleware 自身的例外,其回應不經 CORSMiddleware,故依 Origin 自行補 CORS 標頭。
     """
     request_id = getattr(request.state, "request_id", None)
     _err_logger.exception("未捕獲例外 request_id=%s path=%s", request_id, request.url.path)
-    return _envelope_response(500, err("internal_error", "伺服器內部錯誤", request_id), request_id)
+    return _envelope_response(
+        500,
+        err("internal_error", "伺服器內部錯誤", request_id),
+        request_id,
+        headers=_cors_headers_for(request),
+    )
 
 
 @app.get("/health")
@@ -371,4 +469,10 @@ app.include_router(audit.router, prefix="/api/v1/audit", tags=["audit"])
 app.include_router(ext.router, prefix="/api/ext/v1", tags=["ext"])
 app.include_router(platform.router, prefix="/api/v1/platform", tags=["platform"])
 app.include_router(branding.public_router, prefix="/api/v1/public", tags=["branding"])
+app.include_router(public_info.router, prefix="/api/v1/public", tags=["public"])
 app.include_router(branding.router, prefix="/api/v1/branding", tags=["branding"])
+
+# 原生 App 裝置推播權杖登記(docs/NATIVE-CLIENTS.md §4.1)
+from app.api.v1 import devices  # noqa: E402
+
+app.include_router(devices.router, prefix="/api/v1/devices", tags=["devices"])

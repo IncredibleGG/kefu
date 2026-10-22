@@ -75,7 +75,7 @@ export function CompanyPage() {
     >
       {/* 搜尋列 */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <div className="relative w-72 max-w-full">
+        <div className="relative w-72 max-w-full max-md:w-full">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={q}
@@ -99,8 +99,9 @@ export function CompanyPage() {
         </div>
       ) : (
         <>
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-sm">
+          {/* 手機(< md):表格保留最小寬度,在框內橫向捲動,欄位不被壓扁或切掉 */}
+          <div className="overflow-hidden rounded-lg border border-border max-md:overflow-x-auto">
+            <table className="w-full text-sm max-md:min-w-[640px]">
               <thead className="bg-muted/50 text-xs text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2.5 text-left font-medium">
@@ -284,7 +285,7 @@ function CompanyFormDialog({
               placeholder={t("company.namePlaceholder", { defaultValue: "例:Acme 科技" })}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
             <div className="space-y-1.5">
               <Label htmlFor="co-domain" className="flex items-center gap-1">
                 <Globe className="h-3.5 w-3.5" /> {t("company.domain", { defaultValue: "網域" })}

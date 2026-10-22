@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { tenancyApi } from "@/api/endpoints";
 import { hexToHslComponents } from "@/lib/brand";
+import { fileUrl } from "@/lib/server";
 
 /**
  * 品牌 / 外觀設定:讀寫 tenant.branding。
@@ -125,7 +126,7 @@ export function BrandSettings() {
                     <span className="text-[11px] text-destructive">{t("brand.logoInvalid")}</span>
                   ) : (
                     <img
-                      src={trimmedLogo}
+                      src={fileUrl(trimmedLogo) ?? undefined}
                       alt={t("brand.logoPreview")}
                       className="h-8 max-w-[140px] object-contain"
                       onError={() => setLogoBroken(true)}
@@ -166,7 +167,7 @@ export function BrandSettings() {
               <div className="flex items-center gap-3 rounded-md border border-border bg-card p-3">
                 {trimmedLogo && !logoBroken ? (
                   <img
-                    src={trimmedLogo}
+                    src={fileUrl(trimmedLogo) ?? undefined}
                     alt={t("brand.logoPreview")}
                     className="h-7 max-w-[120px] object-contain"
                     onError={() => setLogoBroken(true)}

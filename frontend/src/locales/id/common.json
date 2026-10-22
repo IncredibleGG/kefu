@@ -15,7 +15,8 @@
     "desktopNotification": "Notifikasi desktop",
     "desktopNotificationToggle": "Alihkan notifikasi desktop",
     "unreadSummary": "Ada {{total}} belum dibaca di {{sessions}} sesi",
-    "noUnread": "Tidak ada pesan belum dibaca"
+    "noUnread": "Tidak ada pesan belum dibaca",
+    "primaryNav": "Navigasi utama"
   },
   "workspace": {
     "loading": "Memuat…",
@@ -85,7 +86,8 @@
       "read": "Dibaca",
       "delivered": "Terkirim",
       "translatedTag": "Terj.",
-      "imageAlt": "Gambar"
+      "imageAlt": "Gambar",
+      "copy": "Salin"
     },
     "composer": {
       "cannedHint": "Balasan cepat · ketik / lalu kode singkat",
@@ -115,7 +117,15 @@
       "notePlaceholder": "Ringkasan layanan, tindak lanjut…",
       "csatLabel": "Kepuasan",
       "starLabel": "{{n}} bintang",
-      "submit": "Tutup & simpan"
+      "submit": "Tutup & simpan",
+      "closeFailed": "Gagal menutup percakapan, silakan coba lagi",
+      "saveFailed": "Gagal menyimpan ringkasan layanan, silakan coba lagi",
+      "descriptionNoteOnly": "Hanya mencatat ringkasan layanan ini; percakapan tidak akan ditutup.",
+      "internalRatingLabel": "Penilaian internal (opsional)",
+      "clearRating": "Hapus",
+      "internalRatingHint": "Hanya untuk referensi kualitas internal, terpisah dari kepuasan pengunjung (CSAT). Jika tidak dinilai, tidak ada yang dikirim; tidak menimpa atau dihitung dalam penilaian pengunjung.",
+      "submitting": "Memproses…",
+      "saveOnly": "Simpan ringkasan layanan"
     },
     "sessionTags": {
       "label": "Tag sesi",
@@ -209,7 +219,15 @@
         "postbackPlaceholder": "Payload yang dikirim saat diklik (memicu alur bot)",
         "postbackPreview": "Postback (memicu alur bot / otomatisasi saat pengunjung mengeklik)"
       }
-    }
+    },
+    "createTicket": "Jadikan tiket",
+    "transferFailed": "Gagal mengalihkan, silakan coba lagi",
+    "ticketFromSessionTitle": "Tiket dari percakapan: {{name}}",
+    "ticketCreated": "Tiket dibuat",
+    "ticketCreateFailed": "Gagal membuat tiket, silakan coba lagi",
+    "viewTickets": "Lihat tiket",
+    "sendFailed": "Gagal mengirim pesan, silakan coba lagi",
+    "noteSaveFailed": "Gagal menyimpan catatan internal, silakan coba lagi"
   },
   "core": {
     "loginApiMode": "API: {{api}} · Mode: {{mode}}",
@@ -1026,7 +1044,8 @@
     "save": "Simpan",
     "search": "Cari",
     "language": "Bahasa",
-    "exportCsv": "Ekspor CSV"
+    "exportCsv": "Ekspor CSV",
+    "copy": "Salin"
   },
   "login": {
     "demoHint": "Saat backend belum aktif, gunakan email/kata sandi apa pun untuk masuk dalam mode mock",
@@ -1152,7 +1171,10 @@
     "away": "Tidak di tempat",
     "busy": "Sibuk",
     "offline": "Offline",
-    "online": "Online"
+    "online": "Online",
+    "syncNoStaff": "Identitas agen tidak dapat diambil, status belum disinkronkan",
+    "syncFailed": "Gagal mengubah status, silakan coba lagi",
+    "syncErrorShort": "Status belum disinkronkan"
   },
   "topbar": {
     "account": "Akun",
@@ -1321,7 +1343,8 @@
     },
     "emptyValue": "—",
     "deleteConfirm": "Yakin menghapus field kustom ini? Nilai yang sudah diisi tidak akan ditampilkan lagi, tetapi tetap tersimpan dalam data tiket yang ada.",
-    "selectPlaceholder": "Silakan pilih"
+    "selectPlaceholder": "Silakan pilih",
+    "requiredMissing": "Isi kolom wajib terlebih dahulu"
   },
   "routing": {
     "queue": {
@@ -1634,7 +1657,8 @@
     "removeParticipant": "Hapus",
     "threadPlaceholder": "Balas diskusi, gunakan @ untuk menyebut rekan…",
     "untitled": "Diskusi tanpa nama",
-    "searchStaff": "Cari agen untuk ditambahkan…"
+    "searchStaff": "Cari agen untuk ditambahkan…",
+    "mentionNoteFailed": "Gagal mengirim catatan @sebut, silakan coba lagi"
   },
   "reports": {
     "colLevel": "Tingkat",
@@ -1870,7 +1894,8 @@
     "cancel": "Batal",
     "tags": "Tag",
     "close": "Tutup",
-    "actions": "Urutan Tindakan"
+    "actions": "Urutan Tindakan",
+    "actionIncomplete": "Ada tindakan yang kolom wajibnya belum diisi"
   },
   "knowledge": {
     "manage": {
@@ -2410,7 +2435,8 @@
     "statusQueued": "Dalam antrean",
     "statusClosed": "Selesai",
     "closedBadge": "Selesai",
-    "reopen": "Buka kembali"
+    "reopen": "Buka kembali",
+    "visitorTypingPreview": "Pengunjung sedang mengetik: "
   },
   "pagetrail": {
     "error": "Gagal memuat jejak penjelajahan",
@@ -2899,5 +2925,160 @@
       "weekly": "Mingguan",
       "monthly": "Bulanan"
     }
+  },
+  "native": {
+    "notify": {
+      "channelName": "Notifikasi pesan",
+      "channelDesc": "Pengingat pesan baru, penugasan, dan pengalihan",
+      "visitor": "Pengunjung"
+    },
+    "server": {
+      "title": "Hubungkan ke server",
+      "subtitle": "Masukkan alamat server kefu perusahaan Anda",
+      "urlLabel": "Alamat server",
+      "connect": "Hubungkan",
+      "connecting": "Menghubungkan…",
+      "cancel": "Batal",
+      "errorEmpty": "Masukkan alamat server",
+      "errorInvalid": "Format alamat tidak valid",
+      "errorHttps": "Aplikasi hanya dapat terhubung ke server https://",
+      "errorNotKefu": "Alamat ini bukan server kefu",
+      "errorOutdated": "Server ini memerlukan versi aplikasi yang lebih baru, perbarui terlebih dahulu",
+      "errorUnreachable": "Tidak dapat terhubung ke server, periksa alamat dan jaringan Anda",
+      "switchTitle": "Ganti server?",
+      "switchDesc": "Tautan meminta untuk beralih ke {{server}}. Setelah beralih, Anda perlu masuk kembali.",
+      "switchConfirm": "Buka pengaturan",
+      "intro": "Masukkan alamat server kefu perusahaan Anda. Jika tidak yakin, tanyakan kepada administrator sistem.",
+      "urlHint": "Cukup isi domainnya, misalnya kf.example.com (https akan digunakan secara otomatis).",
+      "fromLinkHint": "Alamat ini berasal dari tautan pengaturan. Periksa terlebih dahulu sebelum melanjutkan.",
+      "test": "Uji koneksi",
+      "continue": "Lanjutkan",
+      "back": "Kembali tanpa mengganti",
+      "appVersion": "Versi aplikasi {{version}}",
+      "saveFailed": "Tidak dapat menyimpan pengaturan server, silakan coba lagi",
+      "linkTitle": "Tautan pengaturan server diterima",
+      "linkDesc": "Tautan meminta untuk menggunakan server di bawah ini. Pastikan ini alamat yang Anda percayai sebelum menerapkannya.",
+      "linkApply": "Gunakan alamat ini",
+      "linkIgnore": "Abaikan",
+      "okTitle": "Koneksi berhasil",
+      "okHost": "Server",
+      "okVersion": "Versi",
+      "okFeatures": "Fitur",
+      "okLegacy": "Server dapat digunakan, tetapi tidak menyediakan informasi versi (mungkin versi lama).",
+      "featurePassword": "Masuk dengan akun dan kata sandi",
+      "featureGoogle": "Masuk dengan Google",
+      "featureSaml": "SAML SSO",
+      "featurePush": "Notifikasi push",
+      "errorEmptyDesc": "Isi alamat server kefu perusahaan Anda.",
+      "errorInvalidDesc": "Masukkan alamat seperti https://kf.example.com.",
+      "errorHttpsTitle": "Memerlukan koneksi https",
+      "errorNotKefuDesc": "Alamat ini merespons, tetapi bukan layanan kefu. Periksa kembali alamatnya atau tanyakan kepada administrator sistem.",
+      "errorOfflineTitle": "Perangkat sedang offline",
+      "errorOfflineDesc": "Periksa Wi-Fi atau data seluler, lalu coba lagi.",
+      "errorTimeoutTitle": "Waktu koneksi habis",
+      "errorTimeoutDesc": "Server tidak merespons tepat waktu, mungkin karena jaringan tidak stabil atau server sedang sibuk. Silakan coba lagi nanti.",
+      "errorDnsTitle": "Server tidak ditemukan",
+      "errorDnsDesc": "Alamat ini tidak dapat ditemukan atau dihubungi. Periksa ejaan dan koneksi jaringan, serta pastikan sertifikat HTTPS server masih valid."
+    },
+    "login": {
+      "serverLabel": "Server",
+      "serverUnknown": "Belum diatur",
+      "changeServer": "Ganti server",
+      "changeServerTitle": "Ganti server?",
+      "changeServerDesc": "Anda akan kembali ke layar pengaturan server. Setelah beralih ke server lain, Anda perlu masuk kembali dengan akun dari server tersebut.",
+      "changeServerConfirm": "Ganti",
+      "invalidWithTenant": "Email, kata sandi, atau kode ruang kerja salah",
+      "openAuthenticator": "Buka di aplikasi autentikator",
+      "samlLogin": "Masuk ke {{slug}} dengan SAML SSO",
+      "tenantTitle": "Pilih ruang kerja",
+      "tenantHint": "Akun ini terdaftar di beberapa ruang kerja. Pilih ruang kerja yang ingin Anda masuki.",
+      "tenantRequired": "Akun ini terdaftar di beberapa ruang kerja. Isi kode ruang kerja di \"Ruang kerja (lanjutan)\"",
+      "workspaceToggle": "Ruang kerja (lanjutan)",
+      "workspaceLabel": "Kode ruang kerja",
+      "workspacePlaceholder": "Misalnya acme",
+      "workspaceHint": "Isi jika akun yang sama terdaftar di beberapa ruang kerja; selain itu boleh dikosongkan.",
+      "workspaceHintSaml": "Isi jika akun yang sama terdaftar di beberapa ruang kerja atau ingin menggunakan SAML SSO; selain itu boleh dikosongkan.",
+      "sso": {
+        "waiting": "Halaman masuk telah dibuka di browser. Setelah selesai, Anda akan otomatis kembali ke aplikasi.",
+        "completing": "Menyelesaikan proses masuk…",
+        "errOpenBrowser": "Tidak dapat membuka browser sistem, silakan coba lagi",
+        "errSamlDisabled": "SAML SSO belum diaktifkan untuk ruang kerja ini, silakan hubungi admin",
+        "errNotInvited": "Akun ini belum diundang ke ruang kerja, silakan hubungi admin",
+        "errUnavailable": "Layanan single sign-on sedang tidak tersedia, silakan coba lagi nanti",
+        "errInvalidRequest": "Permintaan masuk tidak valid, perbarui aplikasi lalu coba lagi",
+        "errExpired": "Sesi masuk telah kedaluwarsa, silakan masuk kembali",
+        "errVerify": "Verifikasi masuk gagal, silakan masuk kembali",
+        "errIpBlocked": "Alamat jaringan Anda saat ini tidak termasuk dalam daftar yang diizinkan untuk masuk, silakan hubungi admin",
+        "err2faEnroll": "Organisasi mewajibkan verifikasi dua langkah, silakan masuk dengan akun dan kata sandi untuk menyelesaikan pengaturan",
+        "errSuspended": "Ruang kerja ini telah dinonaktifkan, silakan hubungi admin",
+        "errRateLimited": "Terlalu banyak percobaan, silakan coba lagi nanti",
+        "errNetwork": "Tidak dapat terhubung ke server, periksa jaringan lalu coba lagi",
+        "errSamlFailed": "SAML SSO gagal, silakan coba lagi"
+      }
+    },
+    "update": {
+      "title": "Perbarui aplikasi",
+      "desc": "Server ini menyarankan versi {{min}} atau lebih baru (saat ini {{current}}). Beberapa fitur mungkin tidak berfungsi dengan baik.",
+      "dismiss": "Nanti saja"
+    }
+  },
+  "mobile": {
+    "composer": {
+      "placeholder": "Ketik pesan… (ketik / untuk balasan cepat)",
+      "more": "Alat lainnya",
+      "closePanel": "Tutup panel",
+      "enhanceNeedsText": "Ketik isinya terlebih dahulu",
+      "cannedEmpty": "Belum ada balasan cepat yang tersedia",
+      "loading": "Memuat…"
+    },
+    "message": {
+      "actions": "Tindakan pesan"
+    },
+    "tabBar": "Tab utama",
+    "tab": {
+      "visitors": "Pengunjung",
+      "more": "Lainnya",
+      "unreadLabel": "{{label}}, {{count}} belum dibaca"
+    },
+    "openMenu": "Buka menu",
+    "secondaryNav": "Submenu",
+    "secondaryPickerDesc": "Pilih halaman yang ingin dibuka",
+    "group": {
+      "account": "Akun",
+      "team": "Tim",
+      "conversation": "Percakapan",
+      "ai": "AI",
+      "channels": "Saluran",
+      "advanced": "Lanjutan"
+    },
+    "search": {
+      "hint": "Ketik kata kunci untuk mencari percakapan, pesan, dan kontak"
+    },
+    "drawer": {
+      "desc": "Navigasi, status agen, dan pengaturan akun",
+      "darkMode": "Mode gelap",
+      "version": "Versi {{version}}",
+      "toggleSub": "Bentangkan submenu {{label}}"
+    },
+    "context": {
+      "title": "Info pengunjung & alat"
+    },
+    "conv": {
+      "back": "Kembali ke daftar percakapan",
+      "moreActions": "Tindakan lainnya",
+      "backToActions": "Kembali",
+      "snoozedNotice": "Ditunda {{duration}}",
+      "unsnoozedNotice": "Penundaan dibatalkan",
+      "snoozeFailed": "Gagal menunda, silakan coba lagi"
+    },
+    "workspace": {
+      "backToList": "Kembali ke daftar percakapan"
+    }
+  },
+  "conn": {
+    "connected": "Terhubung",
+    "connecting": "Menghubungkan…",
+    "reconnecting": "Menghubungkan ulang…",
+    "mock": "Simulasi real-time"
   }
 }

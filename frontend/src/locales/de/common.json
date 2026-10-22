@@ -15,7 +15,8 @@
     "desktopNotification": "Desktop-Benachrichtigungen",
     "desktopNotificationToggle": "Desktop-Benachrichtigungen umschalten",
     "unreadSummary": "{{total}} ungelesen in {{sessions}} Konversationen",
-    "noUnread": "Keine ungelesenen Nachrichten"
+    "noUnread": "Keine ungelesenen Nachrichten",
+    "primaryNav": "Hauptnavigation"
   },
   "workspace": {
     "loading": "Wird geladen…",
@@ -85,7 +86,8 @@
       "read": "Gelesen",
       "delivered": "Zugestellt",
       "translatedTag": "Übers.",
-      "imageAlt": "Bild"
+      "imageAlt": "Bild",
+      "copy": "Kopieren"
     },
     "composer": {
       "cannedHint": "Textbausteine · / gefolgt vom Kürzel eingeben",
@@ -115,7 +117,15 @@
       "notePlaceholder": "Zusammenfassung, offene Aufgaben…",
       "csatLabel": "Zufriedenheit",
       "starLabel": "{{n}} Sterne",
-      "submit": "Beenden & speichern"
+      "submit": "Beenden & speichern",
+      "closeFailed": "Konversation konnte nicht beendet werden, bitte erneut versuchen",
+      "saveFailed": "Servicezusammenfassung konnte nicht gespeichert werden, bitte erneut versuchen",
+      "descriptionNoteOnly": "Speichert nur die Servicezusammenfassung; die Konversation wird nicht beendet.",
+      "internalRatingLabel": "Interne Bearbeitungsbewertung (optional)",
+      "clearRating": "Zurücksetzen",
+      "internalRatingHint": "Nur als interne Qualitätsreferenz, getrennt von der Besucherzufriedenheit (CSAT). Ohne Bewertung wird nichts übermittelt; die Besucherbewertung wird weder überschrieben noch beeinflusst.",
+      "submitting": "Wird verarbeitet…",
+      "saveOnly": "Servicezusammenfassung speichern"
     },
     "sessionTags": {
       "label": "Konversations-Tags",
@@ -209,7 +219,15 @@
         "postbackPlaceholder": "Beim Klick gesendete Payload (löst einen Bot-Flow aus)",
         "postbackPreview": "Postback (löst beim Klick des Besuchers einen Bot-Flow / eine Automatisierung aus)"
       }
-    }
+    },
+    "createTicket": "In Ticket umwandeln",
+    "transferFailed": "Weiterleitung fehlgeschlagen, bitte erneut versuchen",
+    "ticketFromSessionTitle": "Konversationsticket: {{name}}",
+    "ticketCreated": "Ticket erstellt",
+    "ticketCreateFailed": "Ticket konnte nicht erstellt werden, bitte erneut versuchen",
+    "viewTickets": "Tickets anzeigen",
+    "sendFailed": "Nachricht konnte nicht gesendet werden, bitte erneut versuchen",
+    "noteSaveFailed": "Interne Notiz konnte nicht gespeichert werden, bitte erneut versuchen"
   },
   "core": {
     "loginApiMode": "API: {{api}} · Modus: {{mode}}",
@@ -1026,7 +1044,8 @@
     "save": "Speichern",
     "search": "Suchen",
     "language": "Sprache",
-    "exportCsv": "CSV exportieren"
+    "exportCsv": "CSV exportieren",
+    "copy": "Kopieren"
   },
   "login": {
     "demoHint": "Wenn das Backend nicht läuft, mit beliebigen Zugangsdaten im Mock-Modus anmelden",
@@ -1152,7 +1171,10 @@
     "away": "Abwesend",
     "busy": "Beschäftigt",
     "offline": "Offline",
-    "online": "Online"
+    "online": "Online",
+    "syncNoStaff": "Agentenprofil konnte nicht ermittelt werden; Status nicht synchronisiert",
+    "syncFailed": "Statuswechsel fehlgeschlagen, bitte erneut versuchen",
+    "syncErrorShort": "Status nicht synchronisiert"
   },
   "topbar": {
     "account": "Konto",
@@ -1321,7 +1343,8 @@
     },
     "emptyValue": "—",
     "deleteConfirm": "Dieses benutzerdefinierte Feld wirklich löschen? Bereits eingegebene Werte werden nicht mehr angezeigt, bleiben aber in vorhandenen Ticketdaten erhalten.",
-    "selectPlaceholder": "Bitte auswählen"
+    "selectPlaceholder": "Bitte auswählen",
+    "requiredMissing": "Bitte füllen Sie zuerst die Pflichtfelder aus"
   },
   "routing": {
     "queue": {
@@ -1634,7 +1657,8 @@
     "removeParticipant": "Entfernen",
     "threadPlaceholder": "Auf die Diskussion antworten, Kollegen mit @ erwähnen…",
     "untitled": "Unbenannte Diskussion",
-    "searchStaff": "Agenten zum Hinzufügen suchen…"
+    "searchStaff": "Agenten zum Hinzufügen suchen…",
+    "mentionNoteFailed": "@Erwähnungsnotiz konnte nicht gesendet werden, bitte erneut versuchen"
   },
   "reports": {
     "colLevel": "Stufe",
@@ -1870,7 +1894,8 @@
     "cancel": "Abbrechen",
     "tags": "Tags",
     "close": "Schließen",
-    "actions": "Aktionsabfolge"
+    "actions": "Aktionsabfolge",
+    "actionIncomplete": "Bei einigen Aktionen sind Pflichtfelder nicht ausgefüllt"
   },
   "knowledge": {
     "manage": {
@@ -2410,7 +2435,8 @@
     "statusQueued": "In Warteschlange",
     "statusClosed": "Geschlossen",
     "closedBadge": "Geschlossen",
-    "reopen": "Erneut öffnen"
+    "reopen": "Erneut öffnen",
+    "visitorTypingPreview": "Besucher schreibt: "
   },
   "pagetrail": {
     "error": "Laden des Seitenverlaufs fehlgeschlagen",
@@ -2899,5 +2925,160 @@
       "weekly": "Wöchentlich",
       "monthly": "Monatlich"
     }
+  },
+  "native": {
+    "notify": {
+      "channelName": "Benachrichtigungen zu Nachrichten",
+      "channelDesc": "Hinweise zu neuen Nachrichten, Zuweisungen und Weiterleitungen",
+      "visitor": "Besucher"
+    },
+    "server": {
+      "title": "Mit Server verbinden",
+      "subtitle": "Geben Sie die URL des kefu-Servers Ihres Unternehmens ein",
+      "urlLabel": "Server-URL",
+      "connect": "Verbinden",
+      "connecting": "Verbindung wird hergestellt…",
+      "cancel": "Abbrechen",
+      "errorEmpty": "Bitte geben Sie die Server-URL ein",
+      "errorInvalid": "Ungültiges URL-Format",
+      "errorHttps": "Die App kann sich nur mit https://-Servern verbinden",
+      "errorNotKefu": "Diese URL ist kein kefu-Server",
+      "errorOutdated": "Dieser Server erfordert eine neuere App-Version. Bitte aktualisieren Sie zuerst die App",
+      "errorUnreachable": "Verbindung zum Server nicht möglich. Bitte prüfen Sie URL und Netzwerk",
+      "switchTitle": "Server wechseln?",
+      "switchDesc": "Ein Link fordert eine Verbindung zu {{server}} an. Nach dem Wechsel müssen Sie sich erneut anmelden.",
+      "switchConfirm": "Zur Einrichtung",
+      "intro": "Geben Sie die URL des kefu-Servers Ihres Unternehmens ein. Wenn Sie sie nicht kennen, fragen Sie Ihren Systemadministrator.",
+      "urlHint": "Geben Sie nur die Domain ein, z. B. kf.example.com (https wird automatisch verwendet).",
+      "fromLinkHint": "Diese URL stammt aus einem Einrichtungslink. Bitte prüfen Sie sie, bevor Sie fortfahren.",
+      "test": "Verbindung testen",
+      "continue": "Weiter",
+      "back": "Ohne Änderung zurück",
+      "appVersion": "App-Version {{version}}",
+      "saveFailed": "Servereinstellungen konnten nicht gespeichert werden, bitte erneut versuchen",
+      "linkTitle": "Server-Einrichtungslink empfangen",
+      "linkDesc": "Der Link fordert die Verwendung des folgenden Servers an. Übernehmen Sie ihn nur, wenn Sie dieser URL vertrauen.",
+      "linkApply": "Diese URL verwenden",
+      "linkIgnore": "Ignorieren",
+      "okTitle": "Verbindung erfolgreich",
+      "okHost": "Server",
+      "okVersion": "Version",
+      "okFeatures": "Funktionen",
+      "okLegacy": "Der Server ist erreichbar, liefert aber keine Versionsinformationen (möglicherweise eine ältere Version).",
+      "featurePassword": "Anmeldung mit Passwort",
+      "featureGoogle": "Google-Anmeldung",
+      "featureSaml": "SAML Single Sign-on",
+      "featurePush": "Push-Benachrichtigungen",
+      "errorEmptyDesc": "Bitte geben Sie die URL des kefu-Servers Ihres Unternehmens ein.",
+      "errorInvalidDesc": "Geben Sie eine URL wie https://kf.example.com ein.",
+      "errorHttpsTitle": "https-Verbindung erforderlich",
+      "errorNotKefuDesc": "Diese URL antwortet, ist aber kein kefu-Dienst. Prüfen Sie, ob die URL korrekt ist, oder fragen Sie Ihren Systemadministrator.",
+      "errorOfflineTitle": "Das Gerät ist offline",
+      "errorOfflineDesc": "Prüfen Sie Ihre WLAN- oder Mobilfunkverbindung und versuchen Sie es erneut.",
+      "errorTimeoutTitle": "Zeitüberschreitung der Verbindung",
+      "errorTimeoutDesc": "Der Server hat nicht rechtzeitig geantwortet. Möglicherweise ist das Netzwerk instabil oder der Server ausgelastet. Bitte versuchen Sie es später erneut.",
+      "errorDnsTitle": "Server nicht gefunden",
+      "errorDnsDesc": "Diese URL konnte nicht aufgelöst oder erreicht werden. Prüfen Sie die Schreibweise und Ihre Netzwerkverbindung und stellen Sie sicher, dass das HTTPS-Zertifikat des Servers gültig ist."
+    },
+    "login": {
+      "serverLabel": "Server",
+      "serverUnknown": "Nicht festgelegt",
+      "changeServer": "Server ändern",
+      "changeServerTitle": "Server ändern?",
+      "changeServerDesc": "Sie kehren zum Bildschirm für die Servereinrichtung zurück. Nach dem Wechsel zu einem anderen Server müssen Sie sich mit einem Konto dieses Servers erneut anmelden.",
+      "changeServerConfirm": "Ändern",
+      "invalidWithTenant": "E-Mail, Passwort oder Workspace-ID ist falsch",
+      "openAuthenticator": "In Authenticator-App öffnen",
+      "samlLogin": "Bei {{slug}} mit SAML SSO anmelden",
+      "tenantTitle": "Workspace auswählen",
+      "tenantHint": "Dieses Konto gehört zu mehreren Workspaces. Wählen Sie den Workspace aus, bei dem Sie sich anmelden möchten.",
+      "tenantRequired": "Dieses Konto gehört zu mehreren Workspaces. Bitte geben Sie die Workspace-ID unter „Workspace (erweitert)“ ein",
+      "workspaceToggle": "Workspace (erweitert)",
+      "workspaceLabel": "Workspace-ID",
+      "workspacePlaceholder": "z. B. acme",
+      "workspaceHint": "Nur ausfüllen, wenn Ihr Konto zu mehreren Workspaces gehört; andernfalls leer lassen.",
+      "workspaceHintSaml": "Ausfüllen, wenn Ihr Konto zu mehreren Workspaces gehört oder Sie SAML Single Sign-on verwenden möchten; andernfalls leer lassen.",
+      "sso": {
+        "waiting": "Die Anmeldeseite wurde im Browser geöffnet. Nach Abschluss kehren Sie automatisch zur App zurück.",
+        "completing": "Anmeldung wird abgeschlossen…",
+        "errOpenBrowser": "Systembrowser konnte nicht geöffnet werden, bitte erneut versuchen",
+        "errSamlDisabled": "SAML Single Sign-on ist für diesen Workspace nicht aktiviert. Bitte wenden Sie sich an den Administrator",
+        "errNotInvited": "Dieses Konto wurde nicht in den Workspace eingeladen. Bitte wenden Sie sich an den Administrator",
+        "errUnavailable": "Single Sign-on ist vorübergehend nicht verfügbar. Bitte versuchen Sie es später erneut",
+        "errInvalidRequest": "Ungültige Anmeldeanfrage. Bitte aktualisieren Sie die App und versuchen Sie es erneut",
+        "errExpired": "Die Anmeldesitzung ist abgelaufen. Bitte melden Sie sich erneut an",
+        "errVerify": "Anmeldeprüfung fehlgeschlagen. Bitte melden Sie sich erneut an",
+        "errIpBlocked": "Ihre aktuelle Netzwerkadresse steht nicht auf der Liste der für die Anmeldung zugelassenen Adressen. Bitte wenden Sie sich an den Administrator",
+        "err2faEnroll": "Ihre Organisation verlangt die Zwei-Faktor-Authentifizierung. Bitte melden Sie sich mit E-Mail und Passwort an, um die Einrichtung abzuschließen",
+        "errSuspended": "Dieser Workspace wurde deaktiviert. Bitte wenden Sie sich an den Administrator",
+        "errRateLimited": "Zu viele Versuche, bitte später erneut versuchen",
+        "errNetwork": "Verbindung zum Server nicht möglich. Bitte prüfen Sie Ihr Netzwerk und versuchen Sie es erneut",
+        "errSamlFailed": "SAML Single Sign-on fehlgeschlagen, bitte erneut versuchen"
+      }
+    },
+    "update": {
+      "title": "Bitte aktualisieren Sie die App",
+      "desc": "Dieser Server empfiehlt Version {{min}} oder höher (aktuell {{current}}). Einige Funktionen funktionieren möglicherweise nicht richtig.",
+      "dismiss": "Später"
+    }
+  },
+  "mobile": {
+    "composer": {
+      "placeholder": "Nachricht eingeben… (/ für Textbausteine)",
+      "more": "Weitere Tools",
+      "closePanel": "Bereich schließen",
+      "enhanceNeedsText": "Bitte zuerst Text eingeben",
+      "cannedEmpty": "Keine Textbausteine verfügbar",
+      "loading": "Wird geladen…"
+    },
+    "message": {
+      "actions": "Nachrichtenaktionen"
+    },
+    "tabBar": "Haupt-Tabs",
+    "tab": {
+      "visitors": "Besucher",
+      "more": "Mehr",
+      "unreadLabel": "{{label}}, {{count}} ungelesen"
+    },
+    "openMenu": "Menü öffnen",
+    "secondaryNav": "Untermenü",
+    "secondaryPickerDesc": "Ziel auswählen",
+    "group": {
+      "account": "Konto",
+      "team": "Team",
+      "conversation": "Konversationen",
+      "ai": "KI",
+      "channels": "Kanäle",
+      "advanced": "Erweitert"
+    },
+    "search": {
+      "hint": "Stichwörter eingeben, um Konversationen, Nachrichten und Kontakte zu suchen"
+    },
+    "drawer": {
+      "desc": "Navigation, Agentenstatus und Kontoeinstellungen",
+      "darkMode": "Dunkelmodus",
+      "version": "Version {{version}}",
+      "toggleSub": "Untermenü {{label}} aufklappen"
+    },
+    "context": {
+      "title": "Besucherinfos & Tools"
+    },
+    "conv": {
+      "back": "Zurück zur Konversationsliste",
+      "moreActions": "Weitere Aktionen",
+      "backToActions": "Zurück",
+      "snoozedNotice": "Für {{duration}} zurückgestellt",
+      "unsnoozedNotice": "Zurückstellung aufgehoben",
+      "snoozeFailed": "Zurückstellen fehlgeschlagen, bitte erneut versuchen"
+    },
+    "workspace": {
+      "backToList": "Zurück zur Konversationsliste"
+    }
+  },
+  "conn": {
+    "connected": "Verbunden",
+    "connecting": "Verbindung wird hergestellt…",
+    "reconnecting": "Verbindung wird wiederhergestellt…",
+    "mock": "Simulierte Echtzeit"
   }
 }

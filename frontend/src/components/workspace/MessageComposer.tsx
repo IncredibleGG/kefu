@@ -4,9 +4,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Paperclip, Smile, Send, Zap, BookOpen, StickyNote, MessageSquare, Search, Loader2, Wand2, PenLine, Sparkles, LayoutTemplate, Plus, Trash2, Link2, Lock, RotateCcw } from "lucide-react";
+import { Paperclip, Smile, Send, Zap, BookOpen, StickyNote, MessageSquare, Search, Loader2, Wand2, PenLine, Sparkles, LayoutTemplate, Plus, Trash2, Link2, Lock, RotateCcw, CirclePlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SimpleTooltip } from "@/components/ui/tooltip";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Switch } from "@/components/ui/switch";
+import { useIsCoarse, useIsMobile } from "@/hooks/useMediaQuery";
 import { cn } from "@/lib/utils";
 import { cannedApi, knowledgeApi, conversationApi, routingApi } from "@/api/endpoints";
 import { apiFetch } from "@/api/client";
@@ -113,6 +116,12 @@ function textToHtml(text: string): string {
   return esc.replace(/\r?\n/g, "<br/>");
 }
 
+/** 次要工具鈕:手機(< md)與觸控為主的裝置隱藏,改收進「⊕ 更多工具」面板。 */
+const SECONDARY_TOOL = "max-md:hidden pointer-coarse:hidden";
+
+/** 自建浮層(emoji / 知識庫 / 巨集…)在精簡模式下附加的屬性型別(含 data-state)。 */
+type PanelLayerProps = React.HTMLAttributes<HTMLDivElement> & { "data-state"?: "open" };
+
 /** 罐頭內容變數替換:把 {{visitor_name}} 等佔位替換為當前訪客 / 坐席資料。 */
 function fillVariables(
   content: string,
@@ -196,19 +205,45 @@ export function MessageComposer({
   const [cardError, setCardError] = useState<string | null>(null);
   const [sendingCard, setSendingCard] = useState(false);
 
+  // 行動版面(< md)與觸控為主的裝置:工具列精簡成「備註 / 附件 / ⊕ 更多 / 送出」,
+  // 次要工具收進底部「更多工具」面板(觸控沒有 hover 提示,面板上有文字標籤)。
+  // 桌面(≥ md 且滑鼠)不受影響:相關樣式都以 max-md: / pointer-coarse: 前綴撰寫。
+  const isMobile = useIsMobile();
+  const coarse = useIsCoarse();
+  const compact = isMobile || coarse;
+  const [showMore, setShowMore] = useState(false);
+  // 從「更多工具」選了某項:等面板關閉(焦點鎖解除)後才執行,避免與知識庫搜尋框等搶焦點
+  const pendingMoreActionRef = useRef<(() => void) | null>(null);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
+  // 由「更多工具」開啟的快捷語清單(不經 / 前綴):loading / ready;null = 非此途徑開啟
+  const [cannedFromMenu, setCannedFromMenu] = useState<"loading" | "ready" | null>(null);
+
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Placeholder.configure({ placeholder: t("workspace.inputPlaceholder") }),
+      // 精簡模式改用短提示:原提示含「Enter 送出」,觸控裝置上 Enter 是換行,且手機寬度會折成多行
+      Placeholder.configure({
+        placeholder: compact
+          ? t("mobile.composer.placeholder", "輸入訊息…(/ 呼叫快捷語)")
+          : t("workspace.inputPlaceholder"),
+      }),
     ],
     editorProps: {
-      attributes: { class: "tiptap max-h-40 overflow-y-auto px-3 py-2 text-sm" },
+      attributes: {
+        class: "tiptap max-h-40 overflow-y-auto px-3 py-2 text-sm max-md:max-h-28",
+        // 觸控裝置上 Enter 是換行、由送出鈕送出,鍵盤提示要與行為一致("enter" 而非 "send",
+        // 否則鍵盤顯示「傳送」實際卻換行);桌面不加
+        ...(coarse ? { enterkeyhint: "enter" } : {}),
+      },
       handleKeyDown: (_view, event) => {
         // IME 組字防護:中文/日文/韓文選字時按 Enter 只是確認候選字,
         // 不可當成送出(對齊 widget 端作法),避免送出半成品。
         if (event.isComposing || event.keyCode === 229) return false;
         // Enter 送出;Shift+Enter 換行
         if (event.key === "Enter" && !event.shiftKey) {
+          // 觸控為主的裝置:軟鍵盤沒有 Shift+Enter,Enter 一律換行、改按送出鈕送出(避免誤送);
+          // 外接實體鍵盤仍可用 ⌘/Ctrl+Enter 送出。
+          if (coarse && !(event.metaKey || event.ctrlKey)) return false;
           event.preventDefault();
           send();
           return true;
@@ -251,6 +286,7 @@ export function MessageComposer({
       return;
     }
     setShowCanned(true);
+    setCannedFromMenu(null); // 改由 / 前綴驅動(查無結果時照舊不顯示面板)
     const prefix = trimmed.slice(1).trim();
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -484,6 +520,53 @@ export function MessageComposer({
     setShowKb(false);
     setKbQuery("");
     setKbHits([]);
+  }
+
+  // ---------------- 精簡模式(手機 / 觸控):⊕ 更多工具 ----------------
+  /** 關閉所有工具面板。 */
+  function closePanels() {
+    setShowEmoji(false);
+    setShowKb(false);
+    setShowCanned(false);
+    setShowMacros(false);
+    setShowEnhance(false);
+    setShowCard(false);
+    setCannedFromMenu(null);
+  }
+
+  /** 從「更多工具」開快捷語:不需先輸入 /,直接列出全部(查無時顯示空狀態)。 */
+  function openCannedPicker() {
+    closePanels();
+    setShowCanned(true);
+    setCannedFromMenu("loading");
+    cannedApi
+      .list()
+      .then((rows) => setCanned(rows))
+      .catch(() => setCanned([]))
+      .finally(() => setCannedFromMenu((s) => (s === null ? s : "ready")));
+  }
+
+  /** 選了「更多工具」的某項:先關面板,待焦點鎖解除後(onCloseAutoFocus)再執行。 */
+  function pickMore(action: () => void) {
+    pendingMoreActionRef.current = action;
+    setShowMore(false);
+  }
+
+  /** 精簡模式下把自建浮層標成開啟中的非模態 dialog:Android 返回鍵(lib/mobile/backButton)
+   *  會對最上層 [role=dialog][data-state=open] 派送 Escape,這裡接住並關閉面板,
+   *  不會直接返回上一頁。桌面回傳空物件,DOM 與行為不變。 */
+  function panelLayerProps(label: string, close: () => void): PanelLayerProps {
+    if (!compact) return {};
+    return {
+      role: "dialog",
+      "aria-label": label,
+      "data-state": "open",
+      onKeyDown: (e) => {
+        if (e.key !== "Escape") return;
+        e.stopPropagation();
+        close();
+      },
+    };
   }
 
   // AI 潤飾動作(對齊後端 /ai/enhance 的 action 列舉)
@@ -751,12 +834,22 @@ export function MessageComposer({
   const canNote = !!onSendNote;
   // 目前作用中的卡片草稿(卡片建構器多卡切換用);索引已於增刪時校正,理論上恆有效,仍容錯回退首卡。
   const activeCardDraft = cards[activeCard] ?? cards[0];
+  // 快捷語面板是否顯示:桌面維持「有結果才顯示」;精簡模式由「更多工具」開啟時,空清單也顯示(含載入 / 空狀態)
+  const cannedVisible = showCanned && (canned.length > 0 || (compact && cannedFromMenu !== null));
+  // 精簡模式:有任一工具面板開著時,⊕ 鈕改為 ✕(手機沒有原本的切換鈕可再點一次關閉)
+  const anyPanelOpen = showEmoji || showKb || showMacros || showEnhance || showCard || cannedVisible;
+  // 簽名檔狀態說明(桌面放在 tooltip;觸控沒有 hover,於「更多工具」面板以文字呈現)
+  const signatureHint = appendSig
+    ? signature.trim()
+      ? t("composer.appendSignatureOn", { defaultValue: "送出時將附加你的簽名檔" })
+      : t("composer.signatureEmptyHint", { defaultValue: "尚未設定簽名檔,請至「設定 → 個人資料」填寫" })
+    : t("composer.appendSignatureOff", { defaultValue: "送出時不附加簽名檔" });
 
   // 已結束會話:不渲染輸入框與工具列,改以提示條 + 「重新開啟」入口取代,
   // 從源頭杜絕「送訊靜默重開」(送訊會 auto-claim 使 status=open)。
   if (disabled) {
     return (
-      <div className="border-t border-border bg-card p-2.5">
+      <div className="border-t border-border bg-card p-2.5 max-md:pb-[max(0.625rem,var(--safe-bottom))] pointer-coarse:pb-[max(0.625rem,var(--safe-bottom))]">
         <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
           <Lock className="h-4 w-4 shrink-0" />
           <span className="flex-1">
@@ -773,20 +866,255 @@ export function MessageComposer({
     );
   }
 
+  // 富卡片建構器主體(頁籤列 + 表單 + 底部按鈕):桌面放在輸入框上方的浮層;手機(< md)改放底部 Sheet
+  const cardBuilder = (
+    <>
+      {/* 卡片頁籤列:切換 / 新增 / 移除卡片(≥2 張送出時以輪播呈現) */}
+      <div className="flex flex-wrap items-center gap-1 border-b border-border px-2.5 py-1.5">
+        {cards.map((_, i) => (
+          <span
+            key={i}
+            className={cn(
+              "flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] pointer-coarse:py-0 pointer-coarse:text-xs",
+              i === activeCard
+                ? "border-brand bg-brand/10 font-medium text-brand"
+                : "border-border text-muted-foreground hover:bg-accent",
+            )}
+          >
+            <button type="button" onClick={() => setActiveCard(i)} className="outline-none pointer-coarse:min-h-10">
+              {t("workspace.rich.card.cardLabel", { n: i + 1, defaultValue: "卡片 {{n}}" })}
+            </button>
+            {cards.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeCard(i)}
+                className="shrink-0 text-muted-foreground hover:text-destructive pointer-coarse:-me-2 pointer-coarse:inline-flex pointer-coarse:size-10 pointer-coarse:items-center pointer-coarse:justify-center pointer-coarse:text-base"
+                aria-label={t("workspace.rich.card.removeCard", { defaultValue: "移除此卡片" })}
+              >
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 px-2"
+          onClick={addCard}
+          disabled={cards.length >= MAX_CARDS}
+          title={
+            cards.length >= MAX_CARDS
+              ? t("workspace.rich.card.maxCardsHint", { max: MAX_CARDS, defaultValue: "最多 {{max}} 張卡片" })
+              : undefined
+          }
+        >
+          <Plus className="h-3.5 w-3.5" /> {t("workspace.rich.card.addCard", { defaultValue: "新增卡片" })}
+        </Button>
+      </div>
+
+      <div className="max-h-80 space-y-2.5 overflow-y-auto p-2.5 max-md:max-h-none max-md:overflow-visible">
+        {cards.length > 1 && (
+          <div className="text-[11px] text-muted-foreground">
+            {t("workspace.rich.card.carouselHint", {
+              count: cards.length,
+              defaultValue: "共 {{count}} 張,送出後以輪播(carousel)橫向呈現",
+            })}
+          </div>
+        )}
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium text-muted-foreground">
+            {t("workspace.rich.card.cardTitle", { defaultValue: "標題" })}
+          </label>
+          <input
+            value={activeCardDraft.title}
+            onChange={(e) => patchActiveCard({ title: e.target.value })}
+            placeholder={t("workspace.rich.card.cardTitlePlaceholder", { defaultValue: "卡片標題(選填)" })}
+            className="w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-ring pointer-coarse:min-h-10"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium text-muted-foreground">
+            {t("workspace.rich.card.cardText", { defaultValue: "內文" })}
+          </label>
+          <textarea
+            value={activeCardDraft.text}
+            onChange={(e) => patchActiveCard({ text: e.target.value })}
+            placeholder={t("workspace.rich.card.cardTextPlaceholder", { defaultValue: "卡片文字(選填)" })}
+            className="min-h-[52px] w-full resize-y rounded-md border border-input bg-transparent px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-ring"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[11px] font-medium text-muted-foreground">
+            {t("workspace.rich.card.imageUrl", { defaultValue: "圖片 URL(選填)" })}
+          </label>
+          <input
+            value={activeCardDraft.image}
+            onChange={(e) => patchActiveCard({ image: e.target.value })}
+            placeholder="https://…/image.png"
+            className="w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 font-mono text-[11px] outline-none focus:ring-2 focus:ring-ring pointer-coarse:min-h-10"
+          />
+        </div>
+
+        {/* 按鈕清單(作用於目前卡片) */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              {t("workspace.rich.card.buttons", { defaultValue: "按鈕" })}
+            </span>
+            <Button variant="outline" size="sm" className="h-7" onClick={addCardButton}>
+              <Plus className="h-3.5 w-3.5" /> {t("workspace.rich.card.addButton", { defaultValue: "新增按鈕" })}
+            </Button>
+          </div>
+          {activeCardDraft.buttons.map((b, i) => (
+            <div key={i} className="space-y-1.5 rounded-md border border-border p-2">
+              <div className="flex items-center gap-1.5">
+                <input
+                  value={b.label}
+                  onChange={(e) => updateCardButton(i, { label: e.target.value })}
+                  placeholder={t("workspace.rich.card.buttonLabel", { defaultValue: "按鈕文字" })}
+                  className="h-7 flex-1 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus:ring-2 focus:ring-ring max-md:min-w-0 pointer-coarse:h-10"
+                />
+                <select
+                  value={b.type}
+                  onChange={(e) => updateCardButton(i, { type: e.target.value as CardButtonDraft["type"] })}
+                  className="h-7 rounded-md border border-input bg-transparent px-1.5 text-xs outline-none focus:ring-2 focus:ring-ring pointer-coarse:h-10"
+                >
+                  <option value="url">{t("workspace.rich.card.typeUrl", { defaultValue: "連結" })}</option>
+                  <option value="reply">{t("workspace.rich.card.typeReply", { defaultValue: "快捷回覆" })}</option>
+                  <option value="postback">{t("workspace.rich.card.typePostback", { defaultValue: "Postback" })}</option>
+                </select>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => removeCardButton(i)}
+                  className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
+                  aria-label={t("workspace.rich.card.removeButton", { defaultValue: "移除按鈕" })}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {b.type === "url" ? (
+                  <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                ) : b.type === "postback" ? (
+                  <Zap className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                ) : (
+                  <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                )}
+                <input
+                  value={b.value}
+                  onChange={(e) => updateCardButton(i, { value: e.target.value })}
+                  placeholder={
+                    b.type === "url"
+                      ? "https://…"
+                      : b.type === "postback"
+                        ? t("workspace.rich.card.postbackPlaceholder", { defaultValue: "點擊後送出的 payload(觸發 bot 流程)" })
+                        : t("workspace.rich.card.replyPlaceholder", { defaultValue: "點擊後以訪客身分送出的文字" })
+                  }
+                  className="h-7 flex-1 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus:ring-2 focus:ring-ring pointer-coarse:h-10"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {cardError && <div className="text-[11px] font-medium text-destructive">{cardError}</div>}
+      </div>
+      <div className="flex items-center justify-end gap-2 border-t border-border px-2.5 py-1.5">
+        <Button variant="ghost" size="sm" onClick={() => setShowCard(false)} disabled={sendingCard}>
+          {t("workspace.rich.card.cancel", { defaultValue: "取消" })}
+        </Button>
+        <Button size="sm" onClick={sendCard} disabled={sendingCard || !sessionId}>
+          {sendingCard ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          {t("workspace.rich.card.send", { defaultValue: "送出卡片" })}
+        </Button>
+      </div>
+    </>
+  );
+
+  // 「更多工具」面板的項目(精簡模式);皆沿用桌面工具列的同一組開關函式
+  const moreItems: {
+    key: string;
+    icon: typeof Smile;
+    label: string;
+    run: () => void;
+    disabled?: boolean;
+    hint?: string;
+  }[] = [
+    {
+      key: "emoji",
+      icon: Smile,
+      label: t("workspace.composer.emoji"),
+      run: () => {
+        closePanels();
+        toggleEmoji();
+      },
+    },
+    {
+      key: "kb",
+      icon: BookOpen,
+      label: t("workspace.composer.insertKb"),
+      run: () => {
+        closePanels();
+        toggleKb();
+      },
+    },
+    { key: "canned", icon: Zap, label: t("workspace.composer.cannedShortcut"), run: openCannedPicker },
+    {
+      key: "card",
+      icon: LayoutTemplate,
+      label: t("workspace.rich.card.button", { defaultValue: "插入卡片 / 按鈕" }),
+      run: () => {
+        closePanels();
+        toggleCard();
+      },
+    },
+    {
+      key: "macros",
+      icon: Wand2,
+      label: t("macros.button", { defaultValue: "巨集" }),
+      run: () => {
+        closePanels();
+        toggleMacros();
+      },
+    },
+    {
+      key: "enhance",
+      icon: Sparkles,
+      label: t("aiassist.enhance.button", { defaultValue: "AI 潤飾" }),
+      run: () => {
+        closePanels();
+        toggleEnhance();
+      },
+      disabled: !text.trim() || enhancing,
+      hint: !text.trim() ? t("mobile.composer.enhanceNeedsText", "請先輸入內容") : undefined,
+    },
+  ];
+
   return (
     <div
       className={cn(
-        "relative border-t p-2.5 transition-colors",
+        "relative border-t p-2.5 transition-colors max-md:pb-[max(0.625rem,var(--safe-bottom))] pointer-coarse:pb-[max(0.625rem,var(--safe-bottom))]",
         noteMode ? "border-warning/40 bg-warning/5" : "border-border bg-card",
       )}
     >
       {/* 快捷語彈出(真 API) */}
-      {showCanned && canned.length > 0 && (
-        <div className="absolute bottom-full left-2.5 mb-1 w-80 overflow-hidden rounded-md border border-border bg-popover shadow-md">
+      {cannedVisible && (
+        <div
+          className="absolute bottom-full left-2.5 mb-1 w-80 overflow-hidden rounded-md border border-border bg-popover shadow-md max-md:left-2 max-md:right-2 max-md:w-auto"
+          {...panelLayerProps(t("workspace.composer.cannedShortcut"), () => setShowCanned(false))}
+        >
           <div className="border-b border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
             <Zap className="mr-1 inline h-3 w-3" /> {t("workspace.composer.cannedHint")}
           </div>
-          <div className="max-h-64 overflow-y-auto">
+          <div className="max-h-64 overflow-y-auto max-md:max-h-[min(16rem,38dvh)]">
+            {canned.length === 0 && (
+              <div className="px-2.5 py-3 text-center text-[11px] text-muted-foreground">
+                {cannedFromMenu === "loading"
+                  ? t("mobile.composer.loading", "載入中…")
+                  : t("mobile.composer.cannedEmpty", "尚無可用的快捷語")}
+              </div>
+            )}
             {canned.map((c) => (
               <button
                 key={c.id}
@@ -811,7 +1139,10 @@ export function MessageComposer({
 
       {/* Emoji 選擇器(自建輕量面板) */}
       {showEmoji && (
-        <div className="absolute bottom-full left-2.5 mb-1 w-72 overflow-hidden rounded-md border border-border bg-popover shadow-md">
+        <div
+          className="absolute bottom-full left-2.5 mb-1 w-72 overflow-hidden rounded-md border border-border bg-popover shadow-md max-md:left-2 max-md:right-2 max-md:w-auto md:pointer-coarse:w-[22rem]"
+          {...panelLayerProps(t("composer.emojiTitle", "常用表情"), () => setShowEmoji(false))}
+        >
           <div className="border-b border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
             <Smile className="mr-1 inline h-3 w-3" /> {t("composer.emojiTitle", "常用表情")}
           </div>
@@ -821,7 +1152,7 @@ export function MessageComposer({
                 key={emoji}
                 type="button"
                 onClick={() => insertEmoji(emoji)}
-                className="flex h-8 w-8 items-center justify-center rounded text-lg hover:bg-accent"
+                className="flex h-8 w-8 items-center justify-center rounded text-lg hover:bg-accent pointer-coarse:mx-auto pointer-coarse:size-10"
                 aria-label={emoji}
               >
                 {emoji}
@@ -833,7 +1164,10 @@ export function MessageComposer({
 
       {/* 插入知識庫:小搜尋框查知識庫,選一則插入輸入框 */}
       {showKb && (
-        <div className="absolute bottom-full left-2.5 mb-1 w-80 overflow-hidden rounded-md border border-border bg-popover shadow-md">
+        <div
+          className="absolute bottom-full left-2.5 mb-1 w-80 overflow-hidden rounded-md border border-border bg-popover shadow-md max-md:left-2 max-md:right-2 max-md:w-auto"
+          {...panelLayerProps(t("workspace.composer.insertKb"), () => setShowKb(false))}
+        >
           <div className="flex items-center gap-1.5 border-b border-border px-2.5 py-1.5">
             <Search className="h-3.5 w-3.5 text-muted-foreground" />
             <input
@@ -841,11 +1175,11 @@ export function MessageComposer({
               value={kbQuery}
               onChange={(e) => setKbQuery(e.target.value)}
               placeholder={t("composer.kbSearchPlaceholder", "搜尋知識庫…")}
-              className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+              className="w-full bg-transparent text-xs outline-none placeholder:text-muted-foreground pointer-coarse:min-h-8"
             />
             {kbLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           </div>
-          <div className="max-h-64 overflow-y-auto">
+          <div className="max-h-64 overflow-y-auto max-md:max-h-[min(16rem,38dvh)]">
             {kbHits.length > 0 ? (
               kbHits.map((hit, i) => (
                 <button
@@ -875,11 +1209,14 @@ export function MessageComposer({
 
       {/* 巨集面板:列出啟用中的巨集,點選套用 */}
       {showMacros && (
-        <div className="absolute bottom-full left-2.5 mb-1 w-80 overflow-hidden rounded-md border border-border bg-popover shadow-md">
+        <div
+          className="absolute bottom-full left-2.5 mb-1 w-80 overflow-hidden rounded-md border border-border bg-popover shadow-md max-md:left-2 max-md:right-2 max-md:w-auto"
+          {...panelLayerProps(t("macros.button", { defaultValue: "巨集" }), () => setShowMacros(false))}
+        >
           <div className="border-b border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
             <Wand2 className="mr-1 inline h-3 w-3" /> {t("macros.pickHint", { defaultValue: "點選巨集以套用其動作" })}
           </div>
-          <div className="max-h-64 overflow-y-auto">
+          <div className="max-h-64 overflow-y-auto max-md:max-h-[min(16rem,38dvh)]">
             {macros.length > 0 ? (
               macros.map((m) => (
                 <button
@@ -913,7 +1250,10 @@ export function MessageComposer({
 
       {/* AI 潤飾:下拉選改寫動作 */}
       {showEnhance && (
-        <div className="absolute bottom-full left-2.5 mb-1 w-56 overflow-hidden rounded-md border border-border bg-popover shadow-md">
+        <div
+          className="absolute bottom-full left-2.5 mb-1 w-56 overflow-hidden rounded-md border border-border bg-popover shadow-md max-md:left-2 max-md:right-2 max-md:w-auto"
+          {...panelLayerProps(t("aiassist.enhance.title", { defaultValue: "AI 潤飾" }), () => setShowEnhance(false))}
+        >
           <div className="border-b border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
             <Sparkles className="mr-1 inline h-3 w-3" /> {t("aiassist.enhance.title", { defaultValue: "AI 潤飾" })}
           </div>
@@ -924,7 +1264,7 @@ export function MessageComposer({
                 type="button"
                 disabled={enhancing}
                 onClick={() => runEnhance(a.key)}
-                className="flex w-full items-center px-2.5 py-1.5 text-left text-xs hover:bg-accent disabled:opacity-50"
+                className="flex w-full items-center px-2.5 py-1.5 text-left text-xs hover:bg-accent disabled:opacity-50 pointer-coarse:min-h-10"
               >
                 {a.label}
               </button>
@@ -933,174 +1273,31 @@ export function MessageComposer({
         </div>
       )}
 
-      {/* 富卡片建構器:支援輪播(多張卡片),每卡各自標題 / 文字 / 圖 + 按鈕(url 開連結 / reply 快捷回覆) */}
-      {showCard && (
-        <div className="absolute bottom-full left-2.5 mb-1 w-96 max-w-[calc(100vw-24px)] overflow-hidden rounded-md border border-border bg-popover shadow-md">
+      {/* 富卡片建構器:支援輪播(多張卡片),每卡各自標題 / 文字 / 圖 + 按鈕(url 開連結 / reply 快捷回覆)。
+          桌面(≥ md):輸入框上方浮層(維持原樣);手機(< md):底部 Sheet(表單較長,鍵盤開啟時仍可捲動)。 */}
+      {showCard && !isMobile && (
+        <div
+          className="absolute bottom-full left-2.5 mb-1 w-96 max-w-[calc(100vw-24px)] overflow-hidden rounded-md border border-border bg-popover shadow-md"
+          {...panelLayerProps(t("workspace.rich.card.title", { defaultValue: "插入卡片 / 按鈕" }), () => setShowCard(false))}
+        >
           <div className="border-b border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">
             <LayoutTemplate className="mr-1 inline h-3 w-3" /> {t("workspace.rich.card.title", { defaultValue: "插入卡片 / 按鈕" })}
           </div>
-
-          {/* 卡片頁籤列:切換 / 新增 / 移除卡片(≥2 張送出時以輪播呈現) */}
-          <div className="flex flex-wrap items-center gap-1 border-b border-border px-2.5 py-1.5">
-            {cards.map((_, i) => (
-              <span
-                key={i}
-                className={cn(
-                  "flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px]",
-                  i === activeCard
-                    ? "border-brand bg-brand/10 font-medium text-brand"
-                    : "border-border text-muted-foreground hover:bg-accent",
-                )}
-              >
-                <button type="button" onClick={() => setActiveCard(i)} className="outline-none">
-                  {t("workspace.rich.card.cardLabel", { n: i + 1, defaultValue: "卡片 {{n}}" })}
-                </button>
-                {cards.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeCard(i)}
-                    className="shrink-0 text-muted-foreground hover:text-destructive"
-                    aria-label={t("workspace.rich.card.removeCard", { defaultValue: "移除此卡片" })}
-                  >
-                    ×
-                  </button>
-                )}
-              </span>
-            ))}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2"
-              onClick={addCard}
-              disabled={cards.length >= MAX_CARDS}
-              title={
-                cards.length >= MAX_CARDS
-                  ? t("workspace.rich.card.maxCardsHint", { max: MAX_CARDS, defaultValue: "最多 {{max}} 張卡片" })
-                  : undefined
-              }
-            >
-              <Plus className="h-3.5 w-3.5" /> {t("workspace.rich.card.addCard", { defaultValue: "新增卡片" })}
-            </Button>
-          </div>
-
-          <div className="max-h-80 space-y-2.5 overflow-y-auto p-2.5">
-            {cards.length > 1 && (
-              <div className="text-[11px] text-muted-foreground">
-                {t("workspace.rich.card.carouselHint", {
-                  count: cards.length,
-                  defaultValue: "共 {{count}} 張,送出後以輪播(carousel)橫向呈現",
-                })}
-              </div>
-            )}
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-muted-foreground">
-                {t("workspace.rich.card.cardTitle", { defaultValue: "標題" })}
-              </label>
-              <input
-                value={activeCardDraft.title}
-                onChange={(e) => patchActiveCard({ title: e.target.value })}
-                placeholder={t("workspace.rich.card.cardTitlePlaceholder", { defaultValue: "卡片標題(選填)" })}
-                className="w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-muted-foreground">
-                {t("workspace.rich.card.cardText", { defaultValue: "內文" })}
-              </label>
-              <textarea
-                value={activeCardDraft.text}
-                onChange={(e) => patchActiveCard({ text: e.target.value })}
-                placeholder={t("workspace.rich.card.cardTextPlaceholder", { defaultValue: "卡片文字(選填)" })}
-                className="min-h-[52px] w-full resize-y rounded-md border border-input bg-transparent px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-muted-foreground">
-                {t("workspace.rich.card.imageUrl", { defaultValue: "圖片 URL(選填)" })}
-              </label>
-              <input
-                value={activeCardDraft.image}
-                onChange={(e) => patchActiveCard({ image: e.target.value })}
-                placeholder="https://…/image.png"
-                className="w-full rounded-md border border-input bg-transparent px-2.5 py-1.5 font-mono text-[11px] outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-
-            {/* 按鈕清單(作用於目前卡片) */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-medium text-muted-foreground">
-                  {t("workspace.rich.card.buttons", { defaultValue: "按鈕" })}
-                </span>
-                <Button variant="outline" size="sm" className="h-7" onClick={addCardButton}>
-                  <Plus className="h-3.5 w-3.5" /> {t("workspace.rich.card.addButton", { defaultValue: "新增按鈕" })}
-                </Button>
-              </div>
-              {activeCardDraft.buttons.map((b, i) => (
-                <div key={i} className="space-y-1.5 rounded-md border border-border p-2">
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      value={b.label}
-                      onChange={(e) => updateCardButton(i, { label: e.target.value })}
-                      placeholder={t("workspace.rich.card.buttonLabel", { defaultValue: "按鈕文字" })}
-                      className="h-7 flex-1 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
-                    />
-                    <select
-                      value={b.type}
-                      onChange={(e) => updateCardButton(i, { type: e.target.value as CardButtonDraft["type"] })}
-                      className="h-7 rounded-md border border-input bg-transparent px-1.5 text-xs outline-none focus:ring-2 focus:ring-ring"
-                    >
-                      <option value="url">{t("workspace.rich.card.typeUrl", { defaultValue: "連結" })}</option>
-                      <option value="reply">{t("workspace.rich.card.typeReply", { defaultValue: "快捷回覆" })}</option>
-                      <option value="postback">{t("workspace.rich.card.typePostback", { defaultValue: "Postback" })}</option>
-                    </select>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => removeCardButton(i)}
-                      className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
-                      aria-label={t("workspace.rich.card.removeButton", { defaultValue: "移除按鈕" })}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {b.type === "url" ? (
-                      <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    ) : b.type === "postback" ? (
-                      <Zap className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    )}
-                    <input
-                      value={b.value}
-                      onChange={(e) => updateCardButton(i, { value: e.target.value })}
-                      placeholder={
-                        b.type === "url"
-                          ? "https://…"
-                          : b.type === "postback"
-                            ? t("workspace.rich.card.postbackPlaceholder", { defaultValue: "點擊後送出的 payload(觸發 bot 流程)" })
-                            : t("workspace.rich.card.replyPlaceholder", { defaultValue: "點擊後以訪客身分送出的文字" })
-                      }
-                      className="h-7 flex-1 rounded-md border border-input bg-transparent px-2 text-xs outline-none focus:ring-2 focus:ring-ring"
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {cardError && <div className="text-[11px] font-medium text-destructive">{cardError}</div>}
-          </div>
-          <div className="flex items-center justify-end gap-2 border-t border-border px-2.5 py-1.5">
-            <Button variant="ghost" size="sm" onClick={() => setShowCard(false)} disabled={sendingCard}>
-              {t("workspace.rich.card.cancel", { defaultValue: "取消" })}
-            </Button>
-            <Button size="sm" onClick={sendCard} disabled={sendingCard || !sessionId}>
-              {sendingCard ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-              {t("workspace.rich.card.send", { defaultValue: "送出卡片" })}
-            </Button>
-          </div>
+          {cardBuilder}
         </div>
+      )}
+      {isMobile && (
+        <Sheet open={showCard} onOpenChange={(o) => !o && setShowCard(false)}>
+          <SheetContent side="bottom" className="gap-0" aria-describedby={undefined}>
+            <SheetHeader className="pb-2">
+              <SheetTitle className="flex items-center gap-1.5">
+                <LayoutTemplate className="h-4 w-4" />
+                {t("workspace.rich.card.title", { defaultValue: "插入卡片 / 按鈕" })}
+              </SheetTitle>
+            </SheetHeader>
+            {cardBuilder}
+          </SheetContent>
+        </Sheet>
       )}
 
       {/* AI 潤飾處理中 / 失敗提示 */}
@@ -1186,6 +1383,19 @@ export function MessageComposer({
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
             </Button>
           </SimpleTooltip>
+          {/* 精簡模式(手機 / 觸控)才出現:⊕ 開「更多工具」;有工具面板開著時改為 ✕ 關閉面板 */}
+          <Button
+            ref={moreBtnRef}
+            variant="ghost"
+            size="icon-sm"
+            className="hidden max-md:inline-flex pointer-coarse:inline-flex"
+            aria-label={anyPanelOpen ? t("mobile.composer.closePanel", "關閉面板") : t("mobile.composer.more", "更多工具")}
+            aria-haspopup={anyPanelOpen ? undefined : "dialog"}
+            aria-expanded={anyPanelOpen ? undefined : showMore}
+            onClick={() => (anyPanelOpen ? closePanels() : setShowMore(true))}
+          >
+            {anyPanelOpen ? <X className="h-4 w-4" /> : <CirclePlus className="h-4 w-4" />}
+          </Button>
           <SimpleTooltip label={t("workspace.composer.emoji")} side="top">
             <Button
               variant={showEmoji ? "default" : "ghost"}
@@ -1193,6 +1403,7 @@ export function MessageComposer({
               aria-pressed={showEmoji}
               aria-label={t("workspace.composer.emoji")}
               onClick={toggleEmoji}
+              className={SECONDARY_TOOL}
             >
               <Smile className="h-4 w-4" />
             </Button>
@@ -1204,12 +1415,13 @@ export function MessageComposer({
               aria-pressed={showKb}
               aria-label={t("workspace.composer.insertKb")}
               onClick={toggleKb}
+              className={SECONDARY_TOOL}
             >
               <BookOpen className="h-4 w-4" />
             </Button>
           </SimpleTooltip>
           <SimpleTooltip label={t("workspace.composer.cannedShortcut")} side="top">
-            <Button variant="ghost" size="icon-sm" onClick={() => setShowCanned((v) => !v)}>
+            <Button variant="ghost" size="icon-sm" onClick={() => setShowCanned((v) => !v)} className={SECONDARY_TOOL}>
               <Zap className="h-4 w-4" />
             </Button>
           </SimpleTooltip>
@@ -1221,6 +1433,7 @@ export function MessageComposer({
               aria-pressed={showCard}
               aria-label={t("workspace.rich.card.button", { defaultValue: "插入卡片 / 按鈕" })}
               onClick={toggleCard}
+              className={SECONDARY_TOOL}
             >
               <LayoutTemplate className="h-4 w-4" />
             </Button>
@@ -1232,6 +1445,7 @@ export function MessageComposer({
               aria-pressed={showMacros}
               aria-label={t("macros.button", { defaultValue: "巨集" })}
               onClick={toggleMacros}
+              className={SECONDARY_TOOL}
             >
               <Wand2 className="h-4 w-4" />
             </Button>
@@ -1245,21 +1459,13 @@ export function MessageComposer({
               aria-label={t("aiassist.enhance.button", { defaultValue: "AI 潤飾" })}
               onClick={toggleEnhance}
               disabled={!text.trim() || enhancing}
+              className={SECONDARY_TOOL}
             >
               {enhancing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             </Button>
           </SimpleTooltip>
           {/* 附加簽名開關:僅對客回覆生效;簽名於「設定 → 個人資料」設定 */}
-          <SimpleTooltip
-            label={
-              appendSig
-                ? signature.trim()
-                  ? t("composer.appendSignatureOn", { defaultValue: "送出時將附加你的簽名檔" })
-                  : t("composer.signatureEmptyHint", { defaultValue: "尚未設定簽名檔,請至「設定 → 個人資料」填寫" })
-                : t("composer.appendSignatureOff", { defaultValue: "送出時不附加簽名檔" })
-            }
-            side="top"
-          >
+          <SimpleTooltip label={signatureHint} side="top">
             <Button
               variant={appendSig ? "default" : "ghost"}
               size="icon-sm"
@@ -1267,12 +1473,14 @@ export function MessageComposer({
               aria-label={t("composer.appendSignature", { defaultValue: "附加簽名" })}
               onClick={toggleAppendSig}
               disabled={noteMode}
+              className={SECONDARY_TOOL}
             >
               <PenLine className="h-4 w-4" />
             </Button>
           </SimpleTooltip>
           <div className="flex-1" />
-          <span className="mr-2 text-[10px] text-muted-foreground">{t("workspace.composer.sendHint")}</span>
+          {/* 手機隱藏(放不下);觸控裝置 Enter 是換行,這段提示不成立,也隱藏 */}
+          <span className="mr-2 text-[10px] text-muted-foreground max-md:hidden pointer-coarse:hidden">{t("workspace.composer.sendHint")}</span>
           <Button
             size="sm"
             onClick={send}
@@ -1286,6 +1494,57 @@ export function MessageComposer({
           </Button>
         </div>
       </div>
+
+      {/* 「更多工具」底部面板(精簡模式);桌面不會開啟,故不渲染任何內容 */}
+      <Sheet open={showMore} onOpenChange={setShowMore}>
+        <SheetContent
+          side="bottom"
+          aria-describedby={undefined}
+          onCloseAutoFocus={(e) => {
+            // 焦點鎖已解除:執行選取的工具(其面板可能自帶 autoFocus);沒選就把焦點還給 ⊕ 鈕
+            e.preventDefault();
+            const action = pendingMoreActionRef.current;
+            pendingMoreActionRef.current = null;
+            if (action) action();
+            else moreBtnRef.current?.focus();
+          }}
+        >
+          <SheetHeader>
+            <SheetTitle>{t("mobile.composer.more", "更多工具")}</SheetTitle>
+          </SheetHeader>
+          <div className="grid grid-cols-3 gap-2">
+            {moreItems.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                disabled={item.disabled}
+                onClick={() => pickMore(item.run)}
+                className="flex min-h-[4.5rem] flex-col items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-2 text-center text-xs transition-colors hover:bg-accent active:bg-accent disabled:opacity-50"
+              >
+                <item.icon className="h-5 w-5 text-muted-foreground" />
+                <span className="line-clamp-2 leading-tight">{item.label}</span>
+                {item.hint && <span className="text-[10px] leading-tight text-muted-foreground">{item.hint}</span>}
+              </button>
+            ))}
+          </div>
+          {/* 附加簽名:就地切換(不關面板),並以文字說明目前狀態(取代桌面的 tooltip) */}
+          <label
+            className={cn(
+              "flex min-h-12 items-center gap-3 rounded-lg border border-border px-3 py-2",
+              noteMode ? "opacity-50" : "cursor-pointer",
+            )}
+          >
+            <PenLine className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium">
+                {t("composer.appendSignature", { defaultValue: "附加簽名" })}
+              </span>
+              <span className="block text-xs text-muted-foreground">{signatureHint}</span>
+            </span>
+            <Switch checked={appendSig} onCheckedChange={toggleAppendSig} disabled={noteMode} />
+          </label>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

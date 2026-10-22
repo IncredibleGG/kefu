@@ -1,0 +1,5 @@
+# Rust 建置產物
+/target/
+
+# tauri-build 每次建置都會重新產生的權限 JSON schema(capabilities 的 $schema 指向它),不入庫
+/gen/schemas

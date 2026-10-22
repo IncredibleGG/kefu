@@ -1,0 +1,42 @@
+[package]
+name = "kefu"
+version = "0.1.0"
+description = "kefu 坐席台桌面版(Tauri 2:Windows、macOS)"
+authors = ["kefu"]
+license = "UNLICENSED"
+edition = "2021"
+rust-version = "1.90"
+publish = false
+
+# 函式庫名與執行檔名不同(kefu_lib vs kefu),避免 Windows 上 cargo 的 .pdb / .lib 檔名衝突
+[lib]
+name = "kefu_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+# 版本與 frontend/package.json 的 @tauri-apps/* 對齊(crate 與 npm 的 major.minor 必須一致)
+tauri = { version = "2.12.5", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-notification = "2.7.0"
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-os = "2.4.0"
+tauri-plugin-process = "2.4.0"
+tauri-plugin-deep-link = "2.6.2"
+tauri-plugin-store = "2.5.0"
+tauri-plugin-dialog = "2.8.3"
+tauri-plugin-fs = "2.7.1"
+
+# 僅桌面:單一實例(必須第一個註冊,並把 kefu:// 參數轉交 deep-link)、視窗位置記憶、開機自動啟動
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = { version = "2.5.4", features = ["deep-link"] }
+tauri-plugin-window-state = "2.5.0"
+tauri-plugin-autostart = "2.7.0"
+
+# 僅 macOS:啟動時把視窗縮放 / 顯示排進 GCD 主佇列,排在 window-state 的非同步還原之後
+# (與 tao 用的是同一個 crate / 版本,不增加新依賴)
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3"

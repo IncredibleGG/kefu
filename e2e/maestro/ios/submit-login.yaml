@@ -1,0 +1,5 @@
+# iOS:Maestro 的 hideKeyboard 在 WKWebView 不穩定,改在密碼框按 Enter(表單隱式送出)
+# (不截「已填表單」:帳號框不是遮罩,公開 artifact 會看到 E2E_EMAIL)
+appId: cc.kf56k.kefu
+---
+- pressKey: Enter

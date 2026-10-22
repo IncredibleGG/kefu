@@ -7,9 +7,12 @@
 協定端點(對接企業 IdP):
 - ``GET  /metadata/{tenant_slug}``  回 SP metadata XML(entityID + ACS + NameIDFormat)。
 - ``GET  /login/{tenant_slug}``     產 AuthnRequest,以 HTTP-Redirect binding 302 導向 IdP。
+                                    原生 App 帶 client=native + PKCE 參數(同 Google start),
+                                    RelayState 改帶伺服器 nonce(Redis,TTL 600 秒)。
 - ``POST /acs/{tenant_slug}``       接 IdP 的 SAMLResponse,驗章 + 取 email → 比對既有
                                     Staff → 複用 auth._issue_token 發 token,以 URL fragment
-                                    導回前端登入頁(對齊 Google OAuth callback)。
+                                    導回前端登入頁(對齊 Google OAuth callback);RelayState
+                                    對到原生 nonce 時改發一次性 code 導回 App(kefu://…)。
 
 管理端點(需 ``settings.manage``,作用於呼叫者租戶):
 - ``GET  /config``       取本租戶 SSO 設定 + 衍生的 SP/SCIM URL(不回 bearer 雜湊)。
@@ -68,6 +71,12 @@ from app.api.v1.auth import (
     _ip_allowed,
     _issue_token,
     _load_security_policy,
+    as_native_record,
+    native_sso_error,
+    native_sso_success,
+    new_sso_state,
+    parse_native_sso_request,
+    pop_sso_state,
 )
 
 logger = logging.getLogger("kefu.saml")
@@ -550,25 +559,56 @@ async def saml_metadata(tenant_slug: str, db: DbSession, request: Request):
 
 
 @router.get("/login/{tenant_slug}", name="saml_login")
-async def saml_login(tenant_slug: str, db: DbSession, request: Request):
+async def saml_login(
+    tenant_slug: str,
+    db: DbSession,
+    request: Request,
+    client: str | None = None,
+    redirect_uri: str | None = None,
+    state: str | None = None,
+    code_challenge: str | None = None,
+    code_challenge_method: str | None = None,
+):
     """產 AuthnRequest 並 302 導向 IdP SSO URL(HTTP-Redirect binding)。
 
     未啟用 / 未設定 IdP SSO URL → 回 SSO_DISABLED(前端據此提示,不離開頁面)。
+    原生(client=native):參數驗證同 Google start;RelayState 帶伺服器 nonce(Redis 存
+    redirect_uri / app_state / code_challenge / tenant_slug),失敗導回 App 帶 sso_error。
+    Web:RelayState 維持 tenant slug(與既有行為相同;ACS 不依賴它)。
     """
     ip = ratelimit.client_ip(request)
     if not await ratelimit.hit(f"saml-login-ip:{ip}", limit=30, window_seconds=300):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too many attempts")
 
+    if client not in (None, "", "web", "native"):
+        return err("INVALID_REQUEST", "client 參數不正確")
+    native: dict | None = None
+    if client == "native":
+        native, failure = parse_native_sso_request(
+            redirect_uri, state, code_challenge, code_challenge_method
+        )
+        if native is None:
+            return failure
+
     tenant, cfg = await _load_by_slug(db, tenant_slug)
     if not tenant or not cfg or not cfg.saml_enabled or not cfg.saml_idp_sso_url:
+        if native:
+            return native_sso_error(native, "SSO_DISABLED")
         return err("SSO_DISABLED", "此租戶尚未啟用 SAML 單一登入")
+
+    relay_state = tenant_slug
+    if native:
+        nonce = await new_sso_state({**native, "provider": "saml", "tenant_slug": tenant.slug})
+        if nonce is None:
+            return native_sso_error(native, "SSO_UNAVAILABLE")
+        relay_state = nonce
 
     authn = _build_authn_request(
         cfg.saml_idp_sso_url,
         _acs_url(request, tenant_slug, cfg),
         _sp_entity_id(request, tenant_slug),
     )
-    params = {"SAMLRequest": _redirect_encode(authn), "RelayState": tenant_slug}
+    params = {"SAMLRequest": _redirect_encode(authn), "RelayState": relay_state}
     sep = "&" if "?" in cfg.saml_idp_sso_url else "?"
     return RedirectResponse(f"{cfg.saml_idp_sso_url}{sep}{urlencode(params)}", status_code=302)
 
@@ -579,10 +619,15 @@ async def saml_acs(tenant_slug: str, db: DbSession, request: Request):
 
     對齊 Google OAuth callback:成功以 URL fragment 帶 token(#sso_token=…)導回登入頁,
     失敗以 query 帶 sso_error 導回。任一步失敗一律降級(不 500)。
+    RelayState 若對到原生 nonce(GETDEL 單次使用,且須屬同一租戶),成功改發一次性 code
+    導回 App、失敗導回 App 帶 sso_error;否則(Web / IdP 發起)維持既有行為。
     """
     login_url = _frontend_login_url()
+    native: dict | None = None
 
     def _fail(code: str) -> RedirectResponse:
+        if native:
+            return native_sso_error(native, code)
         return RedirectResponse(
             f"{login_url}?{urlencode({'sso_error': code})}", status_code=302
         )
@@ -591,15 +636,26 @@ async def saml_acs(tenant_slug: str, db: DbSession, request: Request):
     if not await ratelimit.hit(f"saml-acs-ip:{ip}", limit=30, window_seconds=300):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, detail="too many attempts")
 
-    tenant, cfg = await _load_by_slug(db, tenant_slug)
-    if not tenant or not cfg or not cfg.saml_enabled:
-        return _fail("SSO_DISABLED")
-
     # 取 SAMLResponse(HTTP-POST binding,application/x-www-form-urlencoded)
     try:
         form = await request.form()
     except Exception:  # noqa: BLE001
         return _fail("SAML_PARSE_ERROR")
+
+    # RelayState → 原生 nonce(Web 流程為 slug 或缺省,查不到即走既有 Web 行為)
+    relay_state = form.get("RelayState")
+    record = await pop_sso_state(relay_state if isinstance(relay_state, str) else None)
+    native = as_native_record(record)
+    if record is not None and record.get("client") == "native":
+        if native is None:
+            return _fail("SAML_STATE_INVALID")
+        if record.get("provider") != "saml" or record.get("tenant_slug") != tenant_slug:
+            return _fail("SAML_STATE_INVALID")
+
+    tenant, cfg = await _load_by_slug(db, tenant_slug)
+    if not tenant or not cfg or not cfg.saml_enabled:
+        return _fail("SSO_DISABLED")
+
     saml_response_b64 = form.get("SAMLResponse")
     if not saml_response_b64 or not isinstance(saml_response_b64, str):
         return _fail("SAML_PARSE_ERROR")
@@ -637,6 +693,9 @@ async def saml_acs(tenant_slug: str, db: DbSession, request: Request):
             return _fail("LOGIN_IP_BLOCKED")
         if require_2fa and not staff_row.totp_enabled:
             return _fail("TWOFA_ENROLL_REQUIRED")
+
+    if native:
+        return await native_sso_success(staff_row, native)
 
     session = await _issue_token(db, staff_row)
     token = session["data"]["access_token"]

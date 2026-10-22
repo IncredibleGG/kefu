@@ -8,26 +8,20 @@ node_modules/
 dist/
 dist-native/
 coverage/
+*.tsbuildinfo
 
 # Env & secrets(只收 .env.example;真實金鑰一律走 ~/.config/devkeys 或 CI secrets)
 .env
 .env.*
 !.env.example
+# 原生建置設定(不含金鑰;VITE_MOCK=off 等必須入庫,CI 的 build:native 才讀得到)
+!frontend/.env.native
 
 # Rust / Tauri
 target/
 
-# Capacitor / Android
-clients/mobile/android/.gradle/
-clients/mobile/android/build/
-clients/mobile/android/app/build/
-clients/mobile/android/capacitor-cordova-android-plugins/build/
-clients/mobile/android/local.properties
-
-# Capacitor / iOS
-clients/mobile/ios/App/build/
-clients/mobile/ios/App/Pods/
-clients/mobile/ios/DerivedData/
+# Capacitor:frontend/android、frontend/ios 各自有 .gitignore 處理建置產物與 cap sync 複製的 web 檔;
+# 這裡只放跨專案的 Xcode 使用者狀態
 *.xcuserstate
 xcuserdata/
 
@@ -45,3 +39,6 @@ GoogleService-Info.plist
 .DS_Store
 *.log
 .idea/
+
+# CI 產生的 E2E 專用 Tauri 覆寫設定(不入庫)
+frontend/src-tauri/tauri.e2e.conf.json

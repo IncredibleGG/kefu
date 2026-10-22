@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- 系統匣 / macOS 選單列模板圖:單色黑 + 透明(macOS 以 template 模式自動反白) -->
+  <g transform="translate(16 16) scale(1.55) translate(-16 -15.5)"><path d="M9 11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3h-6l-4 3v-3a3 3 0 0 1-1-2z" fill="#000"/></g>
+</svg>

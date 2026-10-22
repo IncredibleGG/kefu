@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Copy,
@@ -17,10 +18,59 @@ import {
 } from "lucide-react";
 import { cn, hhmm } from "@/lib/utils";
 import { renderMarkdown } from "@/lib/markdown";
+import { fileUrl } from "@/lib/server";
 import { SimpleTooltip } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { COARSE_QUERY } from "@/hooks/useMediaQuery";
 import type { Message } from "@/types";
+
+/** 長按開訊息選單的時間門檻(ms)與手指容許位移(px,超過視為捲動,取消長按)。 */
+const LONG_PRESS_MS = 450;
+const LONG_PRESS_SLOP = 10;
+
+/** 複製文字:優先 Clipboard API;不可用或被拒(例如部分 WebView 的自訂 scheme)時改用 execCommand 備援。 */
+async function copyText(text: string): Promise<void> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+  } catch {
+    /* 改用備援 */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "0";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch {
+    /* 略過:無法複製時不打斷操作 */
+  }
+}
+
+/** 觸控為主的裝置(以事件當下判斷,避免每則訊息各自訂閱 media query)。 */
+function isCoarsePointer(): boolean {
+  try {
+    return typeof window !== "undefined" && !!window.matchMedia?.(COARSE_QUERY).matches;
+  } catch {
+    return false;
+  }
+}
 
 /** 附件連結安全檢查:僅允許 http(s):// 或本站相對路徑(單一開頭斜線),
  *  擋掉 javascript: / data: / 協定相對(//host)等,避免點擊圖片 / 檔案連結觸發 XSS。 */
@@ -31,7 +81,8 @@ function isSafeUrl(u: string): boolean {
   return false;
 }
 
-/** 單則訊息:左右氣泡 + 系統事件 + hover 訊息級操作(含質檢標旗) */
+/** 單則訊息:左右氣泡 + 系統事件 + hover 訊息級操作(含質檢標旗)。
+ *  觸控裝置沒有 hover:隱藏懸停操作列,改為長按氣泡(或 contextmenu)開啟選單(複製 / 引用 / 標旗)。 */
 export function MessageBubble({
   message,
   onFlag,
@@ -47,6 +98,59 @@ export function MessageBubble({
   readState?: "delivered" | "read";
 }) {
   const { t } = useTranslation();
+  // 長按選單(觸控):開關狀態、長按計時、最後一次指標類型、長按後吞掉放開時的 click(避免誤開連結)
+  const [menuOpen, setMenuOpen] = useState(false);
+  const pressRef = useRef<{ timer: number; x: number; y: number } | null>(null);
+  const lastPointerRef = useRef<string>("mouse");
+  const suppressClickRef = useRef(false);
+
+  function cancelPress() {
+    if (pressRef.current) {
+      window.clearTimeout(pressRef.current.timer);
+      pressRef.current = null;
+    }
+  }
+  /** 選單內容經 Portal 渲染,但 React 事件仍會沿元件樹冒泡到氣泡;只處理真正發生在氣泡 DOM 內的事件。 */
+  function fromBubble(e: React.SyntheticEvent<HTMLElement>): boolean {
+    return e.currentTarget.contains(e.target as Node);
+  }
+  function onPressStart(e: React.PointerEvent<HTMLElement>) {
+    if (!fromBubble(e)) return;
+    lastPointerRef.current = e.pointerType;
+    suppressClickRef.current = false;
+    cancelPress();
+    // 滑鼠維持原本行為(懸停操作列 + 瀏覽器原生右鍵選單);只有觸控 / 觸控筆才計時長按
+    if (e.pointerType === "mouse") return;
+    const x = e.clientX;
+    const y = e.clientY;
+    pressRef.current = {
+      x,
+      y,
+      timer: window.setTimeout(() => {
+        pressRef.current = null;
+        suppressClickRef.current = true;
+        setMenuOpen(true);
+      }, LONG_PRESS_MS),
+    };
+  }
+  function onPressMove(e: React.PointerEvent) {
+    const p = pressRef.current;
+    if (p && Math.hypot(e.clientX - p.x, e.clientY - p.y) > LONG_PRESS_SLOP) cancelPress();
+  }
+  function onContextMenu(e: React.MouseEvent<HTMLElement>) {
+    if (!fromBubble(e)) return;
+    // 桌面滑鼠右鍵:保留瀏覽器原生選單;觸控長按(Android 會發 contextmenu)或觸控裝置才接手
+    if (lastPointerRef.current === "mouse" && !isCoarsePointer()) return;
+    e.preventDefault();
+    cancelPress();
+    setMenuOpen(true);
+  }
+  function onClickCapture(e: React.MouseEvent<HTMLElement>) {
+    if (!suppressClickRef.current || !fromBubble(e)) return;
+    suppressClickRef.current = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }
 
   // 內部備註:黃底卡片 + 明顯標籤,與對客訊息明確區分(僅坐席可見)
   if (message.sender_type === "note") {
@@ -82,7 +186,7 @@ export function MessageBubble({
 
   return (
     <div className={cn("group flex gap-2 px-1", isVisitor ? "justify-start" : "justify-end")}>
-      <div className={cn("flex max-w-[76%] flex-col", isVisitor ? "items-start" : "items-end")}>
+      <div className={cn("flex max-w-[76%] flex-col max-md:max-w-[85%]", isVisitor ? "items-start" : "items-end")}>
         {/* 傳送者標籤 */}
         <div className="mb-0.5 flex items-center gap-1 px-1 text-[11px] text-muted-foreground">
           {isAi && <Bot className="h-3 w-3 text-brand" />}
@@ -96,16 +200,24 @@ export function MessageBubble({
         </div>
 
         <div className={cn("flex items-end gap-1", isVisitor ? "flex-row" : "flex-row-reverse")}>
-          {/* 氣泡 */}
+          {/* 氣泡(觸控:長按開訊息選單;關閉文字選取與 iOS 長按預覽,避免與選單衝突) */}
           <div
             className={cn(
-              "rounded-lg px-3 py-2 text-sm shadow-sm",
+              "relative rounded-lg px-3 py-2 text-sm shadow-sm pointer-coarse:select-none pointer-coarse:[-webkit-touch-callout:none]",
               isVisitor
                 ? "rounded-tl-sm bg-muted text-foreground"
                 : isAi
                   ? "rounded-tr-sm border border-brand/30 bg-brand/10 text-foreground"
                   : "rounded-tr-sm bg-brand text-brand-foreground",
+              menuOpen && "ring-2 ring-ring/50",
             )}
+            onPointerDown={onPressStart}
+            onPointerMove={onPressMove}
+            onPointerUp={cancelPress}
+            onPointerCancel={cancelPress}
+            onPointerLeave={cancelPress}
+            onContextMenu={onContextMenu}
+            onClickCapture={onClickCapture}
           >
             {message.i18n ? (
               <TranslatedContent i18n={message.i18n} />
@@ -141,11 +253,42 @@ export function MessageBubble({
                 ))}
               </div>
             )}
+
+            {/* 長按選單:以氣泡本身為定位錨點(錨點不可互動),只在開啟時渲染 */}
+            {menuOpen && (
+              <DropdownMenu open onOpenChange={setMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <span aria-hidden className="pointer-events-none absolute inset-0" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  side="bottom"
+                  align={isVisitor ? "start" : "end"}
+                  collisionPadding={8}
+                  aria-label={t("mobile.message.actions", "訊息操作")}
+                  onCloseAutoFocus={(e) => e.preventDefault()}
+                >
+                  <DropdownMenuItem className="pointer-coarse:min-h-10" onSelect={() => void copyText(message.content)}>
+                    <Copy />
+                    {t("workspace.messageBubble.copy", "複製")}
+                  </DropdownMenuItem>
+                  {onQuote && (
+                    <DropdownMenuItem className="pointer-coarse:min-h-10" onSelect={() => onQuote(message.content)}>
+                      <Quote />
+                      {t("workspace.messageBubble.quote")}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem className="pointer-coarse:min-h-10" onSelect={() => onFlag(!message.flagged)}>
+                    <Flag className={cn(message.flagged && "fill-warning text-warning")} />
+                    {message.flagged ? t("workspace.messageBubble.unflag") : t("workspace.messageBubble.flag")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
 
-          {/* hover 訊息級操作 */}
-          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-            <MsgAction label={t("panel.search")} onClick={() => navigator.clipboard?.writeText(message.content)}>
+          {/* hover 訊息級操作(觸控裝置沒有 hover,隱藏;改用長按選單) */}
+          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:hidden">
+            <MsgAction label={t("workspace.messageBubble.copy", "複製")} onClick={() => void copyText(message.content)}>
               <Copy className="h-3.5 w-3.5" />
             </MsgAction>
             {onQuote && (
@@ -200,7 +343,13 @@ function MsgAction({
 }) {
   return (
     <SimpleTooltip label={label} side="top">
-      <Button variant="ghost" size="icon-sm" className={cn("h-7 w-7", active && "text-warning")} onClick={onClick}>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className={cn("h-7 w-7", active && "text-warning")}
+        onClick={onClick}
+        aria-label={label}
+      >
         {children}
       </Button>
     </SimpleTooltip>
@@ -233,10 +382,12 @@ function ImageContent({ url }: { url: string }) {
   if (!isSafeUrl(url)) {
     return <span className="whitespace-pre-wrap break-words">{url}</span>;
   }
+  // 相對路徑(/api/v1/channel/files/…)補伺服器前綴:原生殼的 origin 不是伺服器
+  const abs = fileUrl(url) ?? url;
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="block">
+    <a href={abs} target="_blank" rel="noreferrer" className="block">
       <img
-        src={url}
+        src={abs}
         alt={t("workspace.messageBubble.imageAlt")}
         className="max-h-60 max-w-full rounded-md object-contain"
         loading="lazy"
@@ -250,16 +401,17 @@ function FileContent({ url }: { url: string }) {
   if (!isSafeUrl(url)) {
     return <span className="whitespace-pre-wrap break-words">{url}</span>;
   }
+  const abs = fileUrl(url) ?? url;
   let name = url;
   try {
-    const p = new URL(url, window.location.href).pathname;
+    const p = new URL(abs, window.location.href).pathname;
     name = decodeURIComponent(p.split("/").pop() || url);
   } catch {
     name = url.split("/").pop() || url;
   }
   return (
     <a
-      href={url}
+      href={abs}
       target="_blank"
       rel="noreferrer"
       className="flex items-center gap-1.5 underline underline-offset-2"
@@ -330,7 +482,7 @@ function RichCard({ card }: { card: RichCardData }) {
     <div className="w-60 overflow-hidden rounded-md border border-border bg-card text-foreground">
       {card.image_url && isSafeUrl(card.image_url) && (
         <img
-          src={card.image_url}
+          src={fileUrl(card.image_url) ?? undefined}
           alt={card.title ?? ""}
           className="h-32 w-full object-cover"
           loading="lazy"
@@ -352,7 +504,7 @@ function RichCard({ card }: { card: RichCardData }) {
               return (
                 <a
                   key={i}
-                  href={b.url}
+                  href={fileUrl(b.url) ?? undefined}
                   target="_blank"
                   rel="noreferrer"
                   className="flex items-center justify-center gap-1 border-b border-border px-2.5 py-1.5 text-center text-xs font-medium text-brand last:border-b-0 hover:bg-accent"

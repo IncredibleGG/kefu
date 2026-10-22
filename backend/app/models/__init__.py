@@ -32,3 +32,4 @@ from app.models.integration import TenantIntegration  # noqa: F401
 from app.models.kb_analytics import KBHit  # noqa: F401
 from app.models.sso import TenantSSOConfig  # noqa: F401
 from app.models.report_schedule import ReportSchedule  # noqa: F401
+from app.models.device import DeviceToken  # noqa: F401

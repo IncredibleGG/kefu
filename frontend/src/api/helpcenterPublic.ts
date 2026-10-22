@@ -4,11 +4,13 @@
  * 設計原則:
  *  - 完全獨立、自帶 `fetch`,不依賴 client/endpoints/hooks(那些帶 Bearer / 401 導登入,
  *    公開頁面不需要也不應觸發)。
- *  - 一律走「同源相對路徑」`/api/v1/helpcenter/...`;dev 由 Vite proxy 轉後端,
- *    生產由 nginx 反代,皆免 CORS。
+ *  - 路徑經 lib/server 的 apiUrl 組裝:web 為同源相對路徑 `/api/v1/helpcenter/...`(或 VITE_API_BASE),
+ *    原生殼則補上使用者設定的伺服器。
  *  - 解析統一信封 `{ ok, data, error, request_id }`,失敗丟 `HelpCenterError`。
  *  - 租戶以網址 slug 定位(demo 租戶 slug=demo)。
  */
+
+import { apiUrl } from "@/lib/server";
 
 const BASE = "/api/v1/helpcenter";
 
@@ -106,7 +108,8 @@ async function get<T>(
   params?: Record<string, string | number | undefined>,
   signal?: AbortSignal,
 ): Promise<T> {
-  const res = await fetch(`${BASE}${path}${buildQuery(params)}`, {
+  // apiUrl:web 維持同源 / apiBase;原生殼補上使用者設定的伺服器(否則會打到 App 自己的 origin)
+  const res = await fetch(apiUrl(`${BASE}${path}`) + buildQuery(params), {
     method: "GET",
     headers: { Accept: "application/json" },
     signal,

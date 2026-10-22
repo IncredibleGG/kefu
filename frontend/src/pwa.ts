@@ -147,5 +147,29 @@ export function initPwa() {
   });
 }
 
+/** 是否在原生殼內(Tauri / Capacitor)。與 lib/platform 規則一致;此入口獨立,不引入平台層。 */
+function isNativeShell(): boolean {
+  if ("__TAURI_INTERNALS__" in window) return true;
+  try {
+    return Boolean(
+      (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.(),
+    );
+  } catch {
+    return false;
+  }
+}
+
 // 作為 index.html 的獨立入口:載入即初始化。
-initPwa();
+// 原生殼不使用 PWA:解除任何已註冊的 SW(避免快取舊殼),也不顯示「安裝到桌面」按鈕。
+if (import.meta.env.VITE_PLATFORM === "native" || isNativeShell()) {
+  try {
+    void navigator.serviceWorker
+      ?.getRegistrations?.()
+      .then((rs) => rs.forEach((r) => void r.unregister()))
+      .catch(() => undefined);
+  } catch {
+    /* 忽略 */
+  }
+} else {
+  initPwa();
+}

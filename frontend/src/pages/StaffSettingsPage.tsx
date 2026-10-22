@@ -30,6 +30,7 @@ import { agentStatusMeta } from "@/lib/channels";
 import { initials } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/api/client";
+import { publicUrl } from "@/lib/server";
 import {
   inviteStaff,
   listPendingInvites,
@@ -41,6 +42,19 @@ import {
   type StaffResetLinkResult,
 } from "@/api/invite";
 import type { StaffAdmin } from "@/types";
+
+/** 邀請 / 重設連結:新版後端回絕對網址 invite_link / reset_link(以伺服器的前端網址為準),
+ *  舊版只有相對 invite_url / reset_url → 以伺服器公開網址補前綴(原生殼不可用 App 自己的 origin)。 */
+function absLink(abs: unknown, rel: string): string {
+  if (typeof abs === "string" && /^https?:\/\//i.test(abs)) return abs;
+  return /^https?:\/\//i.test(rel) ? rel : publicUrl(rel);
+}
+function inviteLinkOf(r: { invite_url: string }): string {
+  return absLink((r as { invite_link?: unknown }).invite_link, r.invite_url);
+}
+function resetLinkOf(r: { reset_url: string }): string {
+  return absLink((r as { reset_link?: unknown }).reset_link, r.reset_url);
+}
 
 type Draft = {
   id?: string;
@@ -190,7 +204,7 @@ export function StaffSettingsPage() {
 
   async function copyInviteLink() {
     if (!inviteResult) return;
-    const link = `${window.location.origin}${inviteResult.invite_url}`;
+    const link = inviteLinkOf(inviteResult);
     try {
       await navigator.clipboard.writeText(link);
       setCopied(true);
@@ -295,7 +309,7 @@ export function StaffSettingsPage() {
 
   async function copyResetLink() {
     if (!resetLinkResult) return;
-    const link = `${window.location.origin}${resetLinkResult.reset_url}`;
+    const link = resetLinkOf(resetLinkResult);
     try {
       await navigator.clipboard.writeText(link);
       setResetLinkCopied(true);
@@ -727,7 +741,7 @@ export function StaffSettingsPage() {
             <div className="flex items-center gap-2">
               <Input
                 readOnly
-                value={resetLinkResult ? `${window.location.origin}${resetLinkResult.reset_url}` : ""}
+                value={resetLinkResult ? resetLinkOf(resetLinkResult) : ""}
                 className="font-mono text-xs"
                 onFocus={(e) => e.currentTarget.select()}
               />
@@ -771,7 +785,7 @@ export function StaffSettingsPage() {
               <div className="flex items-center gap-2">
                 <Input
                   readOnly
-                  value={`${window.location.origin}${inviteResult.invite_url}`}
+                  value={inviteLinkOf(inviteResult)}
                   className="font-mono text-xs"
                   onFocus={(e) => e.currentTarget.select()}
                 />

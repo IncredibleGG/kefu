@@ -11,6 +11,8 @@ import {
   User,
   ChevronDown,
   PanelLeft,
+  Menu,
+  Search,
   Check,
   ShieldCheck,
   Loader2,
@@ -35,19 +37,33 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 import { useAuth } from "@/stores/auth";
 import { useUi } from "@/stores/ui";
 import { useNotify } from "@/stores/notify";
+import { setTitleUnread, initTitleBase } from "@/lib/notify";
 import {
-  requestNotificationPermission,
-  setTitleUnread,
-  initTitleBase,
+  isNative,
   notificationSupported,
-} from "@/lib/notify";
+  requestNotificationPermission,
+  setBadge,
+} from "@/lib/platform";
 import { agentStatusMeta } from "@/lib/channels";
 import { initials, cn } from "@/lib/utils";
 import type { AgentStatus } from "@/types";
 
 const STATUSES: AgentStatus[] = ["online", "busy", "away", "offline"];
 
-export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
+export function TopBar({
+  onToggleSidebar,
+  onOpenMobileNav,
+  onOpenSearch,
+  className,
+}: {
+  onToggleSidebar: () => void;
+  /** 手機版面(< md):漢堡鈕開啟導覽抽屜 */
+  onOpenMobileNav?: () => void;
+  /** 手機版面(< md):搜尋圖示開啟全螢幕搜尋 */
+  onOpenSearch?: () => void;
+  /** 附加到 header(例如沉浸模式以 max-md:hidden 隱藏;隱藏時仍掛載,角標 / 標題效果照常) */
+  className?: string;
+}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { staff, logout, isPlatformAdmin } = useAuth();
@@ -65,31 +81,68 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
     initTitleBase();
   }, []);
 
-  // 未讀總數變動 → 更新分頁標題閃爍(歸零則還原)
+  // 未讀總數變動 → 原生角標(Dock / 工作列 / 系統匣 / 手機圖示);web 更新分頁標題閃爍(歸零則還原)
   useEffect(() => {
-    setTitleUnread(totalUnread);
+    void setBadge(totalUnread);
+    if (!isNative) setTitleUnread(totalUnread);
   }, [totalUnread]);
 
-  // 開啟桌面通知需先取得瀏覽器授權(使用者手勢觸發)
+  // 開啟系統通知需先取得授權(使用者手勢觸發)
   async function toggleDesktop() {
     if (desktop) {
       setDesktop(false);
       return;
     }
-    const perm = await requestNotificationPermission();
-    setDesktop(perm === "granted");
+    setDesktop(await requestNotificationPermission());
   }
+  const canNotify = notificationSupported();
 
   return (
-    <header className="flex h-13 shrink-0 items-center gap-3 border-b border-border bg-card px-3 py-2.5">
-      <Button variant="ghost" size="icon-sm" onClick={onToggleSidebar} aria-label={t("layout.toggleSidebar")}>
+    <header
+      className={cn(
+        "flex h-13 shrink-0 items-center gap-3 border-b border-border bg-card px-3 py-2.5",
+        // 手機版面:頂部延伸到瀏海 / 狀態列下方(高度與上內距各加 safe-top),間距收窄
+        "max-md:h-[calc(3.25rem+var(--safe-top))] max-md:gap-1 max-md:px-2 max-md:pt-[calc(0.625rem+var(--safe-top))]",
+        className,
+      )}
+    >
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onToggleSidebar}
+        aria-label={t("layout.toggleSidebar")}
+        className="max-md:hidden"
+      >
         <PanelLeft className="h-4 w-4" />
       </Button>
 
-      {/* 全域搜尋 */}
-      <GlobalSearch />
+      {/* 手機版面:漢堡鈕(取代 PanelLeft,開啟導覽抽屜) */}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onOpenMobileNav}
+        aria-label={t("mobile.openMenu", "開啟選單")}
+        aria-haspopup="dialog"
+        className="md:hidden pointer-coarse:size-10 [&_svg]:size-5"
+      >
+        <Menu />
+      </Button>
+
+      {/* 全域搜尋(手機版面改由搜尋圖示開啟全螢幕搜尋) */}
+      <GlobalSearch className="max-md:hidden" />
 
       <div className="flex-1" />
+
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onOpenSearch}
+        aria-label={t("common.search")}
+        aria-haspopup="dialog"
+        className="md:hidden pointer-coarse:size-10 [&_svg]:size-5"
+      >
+        <Search />
+      </Button>
 
       {/* 坐席狀態同步失敗指示(不靜默):點擊清除 */}
       {statusError && (
@@ -104,7 +157,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
           <button
             type="button"
             onClick={clearStatusError}
-            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10"
+            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 pointer-coarse:min-h-10 pointer-coarse:min-w-10 pointer-coarse:justify-center"
           >
             <AlertTriangle className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{t("status.syncErrorShort", { defaultValue: "狀態未同步" })}</span>
@@ -115,7 +168,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       {/* 坐席狀態切換(同步到後端 Staff.status) */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-2">
+          <Button variant="outline" size="sm" className="gap-2 max-md:hidden">
             {statusSyncing ? (
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
             ) : (
@@ -137,12 +190,20 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* 語言切換 */}
-      <LanguageSwitcher />
+      {/* 語言切換(手機版面移到導覽抽屜;contents 讓 ≥ md 的排版與原本完全相同) */}
+      <div className="contents max-md:hidden">
+        <LanguageSwitcher />
+      </div>
 
       {/* 主題切換 */}
       <SimpleTooltip label={t("topbar.theme")} side="bottom">
-        <Button variant="ghost" size="icon-sm" onClick={toggleTheme} aria-label={t("topbar.theme")}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={toggleTheme}
+          aria-label={t("topbar.theme")}
+          className="max-md:hidden"
+        >
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>
       </SimpleTooltip>
@@ -150,7 +211,12 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       {/* 通知 */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" className="relative" aria-label={t("topbar.notifications")}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="relative pointer-coarse:size-10 max-md:[&_svg]:size-5"
+            aria-label={t("topbar.notifications")}
+          >
             <Bell className="h-4 w-4" />
             {totalUnread > 0 && (
               <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
@@ -159,7 +225,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
             )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuContent align="end" className="w-72 max-md:max-w-[calc(100vw-1rem)]">
           <DropdownMenuLabel>{t("topbar.notifications")}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {/* 通知偏好開關 */}
@@ -174,7 +240,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
             <label
               className={cn(
                 "flex items-center justify-between gap-2 rounded-md px-1.5 py-1 text-sm",
-                notificationSupported() ? "cursor-pointer" : "opacity-50",
+                canNotify ? "cursor-pointer" : "opacity-50",
               )}
             >
               <span className="flex items-center gap-2">
@@ -184,7 +250,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
               <Switch
                 checked={desktop}
                 onCheckedChange={toggleDesktop}
-                disabled={!notificationSupported()}
+                disabled={!canNotify}
                 aria-label={t("layout.desktopNotificationToggle")}
               />
             </label>
@@ -201,10 +267,21 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
       {/* 帳號選單 */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className={cn("flex items-center gap-2 rounded-md p-1 hover:bg-accent")}>
-            <Avatar className="h-7 w-7">
-              <AvatarFallback>{initials(staff?.display_name)}</AvatarFallback>
-            </Avatar>
+          <button
+            className={cn(
+              "flex items-center gap-2 rounded-md p-1 hover:bg-accent",
+              "pointer-coarse:min-h-10 pointer-coarse:min-w-10 pointer-coarse:justify-center",
+            )}
+          >
+            <span className="relative flex shrink-0">
+              <Avatar className="h-7 w-7">
+                <AvatarFallback>{initials(staff?.display_name)}</AvatarFallback>
+              </Avatar>
+              {/* 手機版面:狀態下拉隱藏,改在頭像角落顯示狀態點 */}
+              <span className="absolute -bottom-0.5 -end-0.5 rounded-full bg-card p-px md:hidden">
+                <StatusDot className={cn(agentStatusMeta[agentStatus].dot, "block h-2 w-2")} />
+              </span>
+            </span>
             <span className="hidden text-sm font-medium sm:block">{staff?.display_name}</span>
           </button>
         </DropdownMenuTrigger>

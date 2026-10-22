@@ -25,7 +25,16 @@ class Settings(BaseSettings):
     # 未設則由 jwt_secret 衍生(見 app.core.crypto),正式環境建議獨立設定。
     secret_key: str | None = None
     # CORS 允許來源:逗號分隔;"*" 全開(widget 跨網域嵌入需要)。正式可收緊為清單。
+    # 白名單模式下會自動併入原生 App 的固定 origin(見 app.main.NATIVE_ORIGIN_REGEX)。
     cors_origins: str = "*"
+    # 額外允許的 origin 正規式(完整比對 fullmatch;None/空 = 不使用)。KEFU_CORS_ORIGIN_REGEX
+    cors_origin_regex: str | None = None
+    # 跨源 JS 可讀取的回應標頭(逗號分隔):request_id 追蹤 + 檔案下載檔名
+    cors_expose_headers: str = "X-Request-Id,Content-Disposition"
+
+    # 原生 App SSO(PKCE)允許的回呼 redirect_uri(逗號分隔,**完全相等**比對,不做前綴/萬用)。
+    # KEFU_NATIVE_REDIRECT_URIS
+    native_redirect_uris: str = "kefu://auth/callback"
 
     # Datastores
     database_url: str = "postgresql+asyncpg://kefu:kefu@localhost:5432/kefu"

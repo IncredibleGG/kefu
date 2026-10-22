@@ -3,16 +3,13 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { config } from "@/lib/config";
+import { getServerOrigin } from "@/lib/server";
 import { cn } from "@/lib/utils";
 
-/** 對外可存取的後端來源:VITE_API_BASE 為空字串時走同源(經 nginx 反代)。
- *  貼到 Meta 後台 / 給第三方的 webhook URL 需要絕對網址,故空字串回退到瀏覽器來源。 */
+/** 對外可存取的後端來源(絕對網址):貼到 Meta 後台 / Telegram / 給第三方的 webhook URL 用。
+ *  web 同源部署回瀏覽器來源;原生殼回使用者設定的伺服器(不可用 App 自己的 tauri:// / capacitor:// origin)。 */
 export function apiOrigin(): string {
-  const base = config.apiBase;
-  if (base) return base.replace(/\/$/, "");
-  if (typeof window !== "undefined") return window.location.origin;
-  return "";
+  return getServerOrigin();
 }
 
 /** 複製到剪貼簿的小按鈕;複製後短暫顯示打勾。 */

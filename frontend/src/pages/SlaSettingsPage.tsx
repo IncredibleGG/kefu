@@ -268,7 +268,8 @@ export function SlaSettingsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
+              {/* 窄手機改單欄:三個數字欄的標籤較長,三欄會折行而錯位 */}
+              <div className="grid grid-cols-3 gap-3 max-sm:grid-cols-1">
                 <div className="space-y-1.5">
                   <Label htmlFor="s-first">{t("config.sla.firstResponseMinutes")}</Label>
                   <Input

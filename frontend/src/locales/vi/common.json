@@ -15,7 +15,8 @@
     "desktopNotification": "Thông báo màn hình",
     "desktopNotificationToggle": "Bật/tắt thông báo màn hình",
     "unreadSummary": "Hiện có {{total}} tin chưa đọc trong {{sessions}} phiên",
-    "noUnread": "Không có tin chưa đọc"
+    "noUnread": "Không có tin chưa đọc",
+    "primaryNav": "Điều hướng chính"
   },
   "workspace": {
     "loading": "Đang tải…",
@@ -85,7 +86,8 @@
       "read": "Đã đọc",
       "delivered": "Đã gửi",
       "translatedTag": "Dịch",
-      "imageAlt": "Hình ảnh"
+      "imageAlt": "Hình ảnh",
+      "copy": "Sao chép"
     },
     "composer": {
       "cannedHint": "Câu mẫu · gõ / rồi mã tắt",
@@ -115,7 +117,15 @@
       "notePlaceholder": "Tóm tắt lần phục vụ, việc cần làm tiếp…",
       "csatLabel": "Mức hài lòng",
       "starLabel": "{{n}} sao",
-      "submit": "Kết thúc và lưu"
+      "submit": "Kết thúc và lưu",
+      "closeFailed": "Kết thúc hội thoại thất bại, vui lòng thử lại",
+      "saveFailed": "Lưu tóm tắt phục vụ thất bại, vui lòng thử lại",
+      "descriptionNoteOnly": "Chỉ ghi lại tóm tắt phục vụ lần này, không kết thúc hội thoại.",
+      "internalRatingLabel": "Đánh giá nội bộ (tùy chọn)",
+      "clearRating": "Xóa",
+      "internalRatingHint": "Chỉ dùng để tham khảo chất lượng nội bộ, tách biệt với mức hài lòng của khách (CSAT); nếu không chấm điểm sẽ không gửi, và không ghi đè hay tính vào đánh giá của khách.",
+      "submitting": "Đang xử lý…",
+      "saveOnly": "Lưu tóm tắt phục vụ"
     },
     "sessionTags": {
       "label": "Thẻ phiên",
@@ -209,7 +219,15 @@
         "postbackPlaceholder": "payload gửi khi nhấp (kích hoạt luồng bot)",
         "postbackPreview": "Postback (khi khách nhấp sẽ kích hoạt luồng bot / tự động hóa)"
       }
-    }
+    },
+    "createTicket": "Chuyển thành phiếu",
+    "transferFailed": "Chuyển tiếp thất bại, vui lòng thử lại",
+    "ticketFromSessionTitle": "Phiếu từ hội thoại: {{name}}",
+    "ticketCreated": "Đã tạo phiếu",
+    "ticketCreateFailed": "Tạo phiếu thất bại, vui lòng thử lại",
+    "viewTickets": "Xem phiếu",
+    "sendFailed": "Gửi tin nhắn thất bại, vui lòng thử lại",
+    "noteSaveFailed": "Lưu ghi chú nội bộ thất bại, vui lòng thử lại"
   },
   "core": {
     "loginApiMode": "API: {{api}} · Chế độ: {{mode}}",
@@ -1026,7 +1044,8 @@
     "save": "Lưu",
     "search": "Tìm kiếm",
     "language": "Ngôn ngữ",
-    "exportCsv": "Xuất CSV"
+    "exportCsv": "Xuất CSV",
+    "copy": "Sao chép"
   },
   "login": {
     "demoHint": "Khi backend chưa chạy, dùng bất kỳ tài khoản/mật khẩu nào để vào ở chế độ mock",
@@ -1152,7 +1171,10 @@
     "away": "Vắng mặt",
     "busy": "Bận",
     "offline": "Ngoại tuyến",
-    "online": "Trực tuyến"
+    "online": "Trực tuyến",
+    "syncNoStaff": "Không lấy được danh tính nhân viên, trạng thái chưa được đồng bộ",
+    "syncFailed": "Chuyển trạng thái thất bại, vui lòng thử lại",
+    "syncErrorShort": "Trạng thái chưa đồng bộ"
   },
   "topbar": {
     "account": "Tài khoản",
@@ -1321,7 +1343,8 @@
     },
     "emptyValue": "—",
     "deleteConfirm": "Bạn có chắc muốn xóa trường tùy chỉnh này? Giá trị đã nhập sẽ không còn hiển thị nhưng vẫn được giữ trong dữ liệu phiếu hiện có.",
-    "selectPlaceholder": "Vui lòng chọn"
+    "selectPlaceholder": "Vui lòng chọn",
+    "requiredMissing": "Vui lòng điền các trường bắt buộc trước"
   },
   "routing": {
     "queue": {
@@ -1634,7 +1657,8 @@
     "removeParticipant": "Xóa",
     "threadPlaceholder": "Trả lời thảo luận, dùng @ để nhắc đến đồng nghiệp…",
     "untitled": "Thảo luận chưa đặt tên",
-    "searchStaff": "Tìm nhân viên để thêm vào…"
+    "searchStaff": "Tìm nhân viên để thêm vào…",
+    "mentionNoteFailed": "Gửi ghi chú @nhắc đến thất bại, vui lòng thử lại"
   },
   "reports": {
     "colLevel": "Cấp độ",
@@ -1870,7 +1894,8 @@
     "cancel": "Hủy",
     "tags": "Nhãn",
     "close": "Đóng",
-    "actions": "Chuỗi hành động"
+    "actions": "Chuỗi hành động",
+    "actionIncomplete": "Có hành động chưa điền đủ các trường bắt buộc"
   },
   "knowledge": {
     "manage": {
@@ -2410,7 +2435,8 @@
     "statusQueued": "Đang chờ",
     "statusClosed": "Đã kết thúc",
     "closedBadge": "Đã kết thúc",
-    "reopen": "Mở lại"
+    "reopen": "Mở lại",
+    "visitorTypingPreview": "Khách đang nhập: "
   },
   "pagetrail": {
     "error": "Tải dấu vết duyệt web thất bại",
@@ -2899,5 +2925,160 @@
       "weekly": "Hằng tuần",
       "monthly": "Hằng tháng"
     }
+  },
+  "native": {
+    "notify": {
+      "channelName": "Thông báo tin nhắn",
+      "channelDesc": "Nhắc nhở tin nhắn mới, phân công và chuyển tiếp",
+      "visitor": "Khách"
+    },
+    "server": {
+      "title": "Kết nối máy chủ",
+      "subtitle": "Nhập địa chỉ máy chủ kefu của công ty bạn",
+      "urlLabel": "Địa chỉ máy chủ",
+      "connect": "Kết nối",
+      "connecting": "Đang kết nối…",
+      "cancel": "Hủy",
+      "errorEmpty": "Vui lòng nhập địa chỉ máy chủ",
+      "errorInvalid": "Địa chỉ không đúng định dạng",
+      "errorHttps": "Ứng dụng chỉ có thể kết nối với máy chủ https://",
+      "errorNotKefu": "Địa chỉ này không phải máy chủ kefu",
+      "errorOutdated": "Máy chủ này yêu cầu phiên bản ứng dụng mới hơn, vui lòng cập nhật trước",
+      "errorUnreachable": "Không thể kết nối máy chủ, vui lòng kiểm tra địa chỉ và mạng",
+      "switchTitle": "Chuyển máy chủ?",
+      "switchDesc": "Liên kết yêu cầu chuyển sang kết nối {{server}}. Sau khi chuyển, bạn cần đăng nhập lại.",
+      "switchConfirm": "Đi tới thiết lập",
+      "intro": "Nhập địa chỉ máy chủ kefu của công ty bạn. Nếu không chắc, vui lòng hỏi quản trị viên hệ thống.",
+      "urlHint": "Chỉ cần nhập tên miền, ví dụ kf.example.com (sẽ tự động dùng https).",
+      "fromLinkHint": "Địa chỉ này đến từ liên kết thiết lập, vui lòng xác nhận trước khi tiếp tục.",
+      "test": "Kiểm tra kết nối",
+      "continue": "Tiếp tục",
+      "back": "Quay lại, không đổi",
+      "appVersion": "Phiên bản ứng dụng {{version}}",
+      "saveFailed": "Không thể lưu thiết lập máy chủ, vui lòng thử lại",
+      "linkTitle": "Đã nhận liên kết thiết lập máy chủ",
+      "linkDesc": "Liên kết yêu cầu chuyển sang dùng máy chủ bên dưới. Vui lòng xác nhận đây là địa chỉ bạn tin cậy trước khi áp dụng.",
+      "linkApply": "Dùng địa chỉ này",
+      "linkIgnore": "Bỏ qua",
+      "okTitle": "Kết nối thành công",
+      "okHost": "Máy chủ",
+      "okVersion": "Phiên bản",
+      "okFeatures": "Tính năng",
+      "okLegacy": "Máy chủ khả dụng nhưng không cung cấp thông tin phiên bản (có thể là phiên bản cũ hơn).",
+      "featurePassword": "Đăng nhập bằng tài khoản và mật khẩu",
+      "featureGoogle": "Đăng nhập Google",
+      "featureSaml": "SAML SSO",
+      "featurePush": "Thông báo đẩy",
+      "errorEmptyDesc": "Vui lòng nhập địa chỉ máy chủ kefu của công ty bạn.",
+      "errorInvalidDesc": "Vui lòng nhập địa chỉ dạng https://kf.example.com.",
+      "errorHttpsTitle": "Cần kết nối https",
+      "errorNotKefuDesc": "Địa chỉ này có phản hồi nhưng không phải dịch vụ kefu. Vui lòng kiểm tra lại địa chỉ hoặc hỏi quản trị viên hệ thống.",
+      "errorOfflineTitle": "Thiết bị đang ngoại tuyến",
+      "errorOfflineDesc": "Vui lòng kiểm tra Wi-Fi hoặc dữ liệu di động rồi thử lại.",
+      "errorTimeoutTitle": "Hết thời gian kết nối",
+      "errorTimeoutDesc": "Máy chủ không phản hồi kịp thời, có thể do mạng không ổn định hoặc máy chủ đang bận. Vui lòng thử lại sau.",
+      "errorDnsTitle": "Không tìm thấy máy chủ",
+      "errorDnsDesc": "Không thể phân giải hoặc kết nối tới địa chỉ này. Vui lòng kiểm tra chính tả và kết nối mạng, đồng thời đảm bảo chứng chỉ HTTPS của máy chủ còn hợp lệ."
+    },
+    "login": {
+      "serverLabel": "Máy chủ",
+      "serverUnknown": "Chưa thiết lập",
+      "changeServer": "Đổi máy chủ",
+      "changeServerTitle": "Đổi máy chủ?",
+      "changeServerDesc": "Bạn sẽ quay lại màn hình thiết lập máy chủ. Sau khi chuyển sang máy chủ khác, bạn cần đăng nhập lại bằng tài khoản của máy chủ đó.",
+      "changeServerConfirm": "Đổi",
+      "invalidWithTenant": "Email, mật khẩu hoặc mã không gian làm việc không đúng",
+      "openAuthenticator": "Mở trong ứng dụng xác thực",
+      "samlLogin": "Đăng nhập {{slug}} bằng SAML SSO",
+      "tenantTitle": "Chọn không gian làm việc",
+      "tenantHint": "Tài khoản này thuộc nhiều không gian làm việc, vui lòng chọn không gian làm việc muốn đăng nhập.",
+      "tenantRequired": "Tài khoản này thuộc nhiều không gian làm việc, vui lòng nhập mã không gian làm việc trong mục \"Không gian làm việc (nâng cao)\"",
+      "workspaceToggle": "Không gian làm việc (nâng cao)",
+      "workspaceLabel": "Mã không gian làm việc",
+      "workspacePlaceholder": "Ví dụ: acme",
+      "workspaceHint": "Điền khi cùng một tài khoản thuộc nhiều không gian làm việc; các trường hợp khác có thể để trống.",
+      "workspaceHintSaml": "Điền khi cùng một tài khoản thuộc nhiều không gian làm việc hoặc khi muốn dùng SAML SSO; các trường hợp khác có thể để trống.",
+      "sso": {
+        "waiting": "Đã mở trang đăng nhập trong trình duyệt, hoàn tất xong sẽ tự động quay lại ứng dụng.",
+        "completing": "Đang hoàn tất đăng nhập…",
+        "errOpenBrowser": "Không thể mở trình duyệt hệ thống, vui lòng thử lại",
+        "errSamlDisabled": "Không gian làm việc này chưa bật SAML SSO, vui lòng liên hệ quản trị viên",
+        "errNotInvited": "Tài khoản này chưa được mời vào không gian làm việc, vui lòng liên hệ quản trị viên",
+        "errUnavailable": "Dịch vụ đăng nhập một lần tạm thời không khả dụng, vui lòng thử lại sau",
+        "errInvalidRequest": "Yêu cầu đăng nhập không hợp lệ, vui lòng cập nhật ứng dụng rồi thử lại",
+        "errExpired": "Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại",
+        "errVerify": "Xác minh đăng nhập thất bại, vui lòng đăng nhập lại",
+        "errIpBlocked": "Địa chỉ mạng hiện tại không nằm trong danh sách được phép đăng nhập, vui lòng liên hệ quản trị viên",
+        "err2faEnroll": "Tổ chức yêu cầu xác thực hai bước, vui lòng đăng nhập bằng tài khoản và mật khẩu để hoàn tất thiết lập",
+        "errSuspended": "Không gian làm việc này đã bị tạm ngưng, vui lòng liên hệ quản trị viên",
+        "errRateLimited": "Thử quá nhiều lần, vui lòng thử lại sau",
+        "errNetwork": "Không thể kết nối máy chủ, vui lòng kiểm tra mạng rồi thử lại",
+        "errSamlFailed": "Đăng nhập SAML SSO thất bại, vui lòng thử lại"
+      }
+    },
+    "update": {
+      "title": "Vui lòng cập nhật ứng dụng",
+      "desc": "Máy chủ này khuyến nghị dùng phiên bản {{min}} trở lên (hiện tại là {{current}}), một số tính năng có thể không hoạt động bình thường.",
+      "dismiss": "Để sau"
+    }
+  },
+  "mobile": {
+    "composer": {
+      "placeholder": "Nhập tin nhắn… (gõ / để gọi câu trả lời nhanh)",
+      "more": "Thêm công cụ",
+      "closePanel": "Đóng bảng",
+      "enhanceNeedsText": "Vui lòng nhập nội dung trước",
+      "cannedEmpty": "Chưa có câu trả lời nhanh nào",
+      "loading": "Đang tải…"
+    },
+    "message": {
+      "actions": "Thao tác tin nhắn"
+    },
+    "tabBar": "Thẻ chính",
+    "tab": {
+      "visitors": "Khách",
+      "more": "Thêm",
+      "unreadLabel": "{{label}}, {{count}} tin chưa đọc"
+    },
+    "openMenu": "Mở menu",
+    "secondaryNav": "Menu con",
+    "secondaryPickerDesc": "Chọn mục muốn chuyển đến",
+    "group": {
+      "account": "Tài khoản",
+      "team": "Nhóm",
+      "conversation": "Hội thoại",
+      "ai": "AI",
+      "channels": "Kênh",
+      "advanced": "Nâng cao"
+    },
+    "search": {
+      "hint": "Nhập từ khóa để tìm hội thoại, tin nhắn và liên hệ"
+    },
+    "drawer": {
+      "desc": "Điều hướng, trạng thái nhân viên và cài đặt tài khoản",
+      "darkMode": "Chế độ tối",
+      "version": "Phiên bản {{version}}",
+      "toggleSub": "Mở rộng menu con {{label}}"
+    },
+    "context": {
+      "title": "Thông tin khách và công cụ"
+    },
+    "conv": {
+      "back": "Quay lại danh sách hội thoại",
+      "moreActions": "Thao tác khác",
+      "backToActions": "Quay lại",
+      "snoozedNotice": "Đã hoãn {{duration}}",
+      "unsnoozedNotice": "Đã hủy hoãn",
+      "snoozeFailed": "Hoãn thất bại, vui lòng thử lại"
+    },
+    "workspace": {
+      "backToList": "Quay lại danh sách hội thoại"
+    }
+  },
+  "conn": {
+    "connected": "Đã kết nối",
+    "connecting": "Đang kết nối…",
+    "reconnecting": "Đang kết nối lại…",
+    "mock": "Mô phỏng thời gian thực"
   }
 }

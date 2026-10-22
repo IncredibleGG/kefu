@@ -1,0 +1,6 @@
+# 伺服器網址與預填值不同時才執行:點輸入框、清空、輸入 E2E_SERVER
+appId: cc.kf56k.kefu
+---
+- tapOn: "https://kf.56k.cc"
+- eraseText: 80
+- inputText: ${E2E_SERVER}

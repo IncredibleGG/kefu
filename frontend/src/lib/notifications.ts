@@ -11,6 +11,9 @@
  * - 點擊:聚焦視窗並導向對應會話(/workspace/{sessionId}),或執行自訂 onClick。
  *
  * 提示音沿用既有 lib/notify.ts 的 playPing(由 store 依音效開關觸發),本模組不重複實作。
+ *
+ * 本模組是 **web** 的實作:由 lib/platform/web.ts 的 notify() 呼叫。原生殼(Tauri / Capacitor)
+ * 改走各自 adapter 的系統通知;呼叫端一律經 lib/platform.notify,不要直接呼叫本模組。
  */
 import { notificationSupported, notificationPermission } from "@/lib/notify";
 

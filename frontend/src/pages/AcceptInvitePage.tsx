@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/stores/auth";
 import { useBrand } from "@/stores/brand";
+import { fileUrl } from "@/lib/server";
 import { ApiError } from "@/api/client";
 import { finalizeSession } from "@/api/authExtra";
 import { acceptInvite } from "@/api/invite";
@@ -78,7 +79,7 @@ export function AcceptInvitePage() {
       <div className="relative w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           {branded && brand.logoUrl ? (
-            <img src={brand.logoUrl} alt={brandName} className="h-12 w-12 rounded-xl object-contain shadow-lg" />
+            <img src={fileUrl(brand.logoUrl) ?? undefined} alt={brandName} className="h-12 w-12 rounded-xl object-contain shadow-lg" />
           ) : (
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-brand-foreground shadow-lg">
               <MessagesSquare className="h-6 w-6" />

@@ -15,7 +15,8 @@
     "desktopNotification": "デスクトップ通知",
     "desktopNotificationToggle": "デスクトップ通知の切替",
     "unreadSummary": "現在 {{total}} 件の未読、{{sessions}} 件の会話にあります",
-    "noUnread": "未読メッセージはありません"
+    "noUnread": "未読メッセージはありません",
+    "primaryNav": "メインナビゲーション"
   },
   "workspace": {
     "loading": "読み込み中…",
@@ -85,7 +86,8 @@
       "read": "既読",
       "delivered": "配信済み",
       "translatedTag": "訳",
-      "imageAlt": "画像"
+      "imageAlt": "画像",
+      "copy": "コピー"
     },
     "composer": {
       "cannedHint": "定型文 · / の後にショートコードを入力",
@@ -115,7 +117,15 @@
       "notePlaceholder": "今回の対応の要約、今後のタスク…",
       "csatLabel": "満足度",
       "starLabel": "{{n}} つ星",
-      "submit": "終了して保存"
+      "submit": "終了して保存",
+      "closeFailed": "会話を終了できませんでした。もう一度お試しください",
+      "saveFailed": "対応サマリーを保存できませんでした。もう一度お試しください",
+      "descriptionNoteOnly": "今回の対応サマリーを記録するだけで、会話は終了しません。",
+      "internalRatingLabel": "社内対応評価(任意)",
+      "clearRating": "クリア",
+      "internalRatingHint": "社内の品質参考用で、訪問者満足度(CSAT)とは別に扱われます。未評価の場合は送信されず、訪問者の評価を上書きしたり集計に含めたりすることもありません。",
+      "submitting": "処理中…",
+      "saveOnly": "対応サマリーを保存"
     },
     "sessionTags": {
       "label": "会話タグ",
@@ -209,7 +219,15 @@
         "postbackPlaceholder": "クリック時に送信する payload(bot フローをトリガー)",
         "postbackPreview": "Postback(訪問者がクリックすると bot フロー / 自動化をトリガー)"
       }
-    }
+    },
+    "createTicket": "チケットに昇格",
+    "transferFailed": "転送に失敗しました。もう一度お試しください",
+    "ticketFromSessionTitle": "会話チケット:{{name}}",
+    "ticketCreated": "チケットを作成しました",
+    "ticketCreateFailed": "チケットを作成できませんでした。もう一度お試しください",
+    "viewTickets": "チケットを表示",
+    "sendFailed": "メッセージを送信できませんでした。もう一度お試しください",
+    "noteSaveFailed": "社内メモを保存できませんでした。もう一度お試しください"
   },
   "core": {
     "loginApiMode": "API:{{api}} · モード:{{mode}}",
@@ -1026,7 +1044,8 @@
     "save": "保存",
     "search": "検索",
     "language": "言語",
-    "exportCsv": "CSV をエクスポート"
+    "exportCsv": "CSV をエクスポート",
+    "copy": "コピー"
   },
   "login": {
     "demoHint": "バックエンド未起動時は任意の認証情報で mock モードにログインできます",
@@ -1152,7 +1171,10 @@
     "away": "離席",
     "busy": "取り込み中",
     "offline": "オフライン",
-    "online": "オンライン"
+    "online": "オンライン",
+    "syncNoStaff": "オペレーター情報を取得できないため、状態が同期されていません",
+    "syncFailed": "状態の切り替えに失敗しました。もう一度お試しください",
+    "syncErrorShort": "状態未同期"
   },
   "topbar": {
     "account": "アカウント",
@@ -1321,7 +1343,8 @@
     },
     "emptyValue": "—",
     "deleteConfirm": "このカスタムフィールドを削除しますか?入力済みの値は表示されなくなりますが、既存のチケットデータには保持されます。",
-    "selectPlaceholder": "選択してください"
+    "selectPlaceholder": "選択してください",
+    "requiredMissing": "必須フィールドを入力してください"
   },
   "routing": {
     "queue": {
@@ -1634,7 +1657,8 @@
     "removeParticipant": "削除",
     "threadPlaceholder": "ディスカッションに返信、@ で同僚をメンション…",
     "untitled": "無題のディスカッション",
-    "searchStaff": "追加するオペレーターを検索…"
+    "searchStaff": "追加するオペレーターを検索…",
+    "mentionNoteFailed": "@メンション付きメモを送信できませんでした。もう一度お試しください"
   },
   "reports": {
     "colLevel": "レベル",
@@ -1870,7 +1894,8 @@
     "cancel": "キャンセル",
     "tags": "タグ",
     "close": "閉じる",
-    "actions": "アクションシーケンス"
+    "actions": "アクションシーケンス",
+    "actionIncomplete": "必須フィールドが未入力のアクションがあります"
   },
   "knowledge": {
     "manage": {
@@ -2410,7 +2435,8 @@
     "statusQueued": "順番待ち",
     "statusClosed": "終了",
     "closedBadge": "終了",
-    "reopen": "再開"
+    "reopen": "再開",
+    "visitorTypingPreview": "訪問者が入力中:"
   },
   "pagetrail": {
     "error": "閲覧履歴の読み込みに失敗しました",
@@ -2899,5 +2925,160 @@
       "weekly": "毎週",
       "monthly": "毎月"
     }
+  },
+  "native": {
+    "notify": {
+      "channelName": "メッセージ通知",
+      "channelDesc": "新着メッセージ、割り当て、転送のお知らせ",
+      "visitor": "訪問者"
+    },
+    "server": {
+      "title": "サーバーに接続",
+      "subtitle": "会社の kefu サーバーの URL を入力してください",
+      "urlLabel": "サーバー URL",
+      "connect": "接続",
+      "connecting": "接続中…",
+      "cancel": "キャンセル",
+      "errorEmpty": "サーバー URL を入力してください",
+      "errorInvalid": "URL の形式が正しくありません",
+      "errorHttps": "アプリは https:// のサーバーにのみ接続できます",
+      "errorNotKefu": "この URL は kefu サーバーではありません",
+      "errorOutdated": "このサーバーには新しいバージョンのアプリが必要です。先にアップデートしてください",
+      "errorUnreachable": "サーバーに接続できません。URL とネットワークを確認してください",
+      "switchTitle": "サーバーを切り替えますか?",
+      "switchDesc": "リンクにより {{server}} への接続が求められています。切り替えると再度ログインが必要です。",
+      "switchConfirm": "設定へ進む",
+      "intro": "貴社の kefu サーバーの URL を入力してください。URL が分からない場合は、システム管理者にお問い合わせください。",
+      "urlHint": "ドメインのみ入力してください(例: kf.example.com)。https は自動的に使用されます。",
+      "fromLinkHint": "この URL は設定リンクから取得されました。内容を確認してから続行してください。",
+      "test": "接続をテスト",
+      "continue": "続行",
+      "back": "変更せずに戻る",
+      "appVersion": "アプリバージョン {{version}}",
+      "saveFailed": "サーバー設定を保存できませんでした。もう一度お試しください",
+      "linkTitle": "サーバー設定リンクを受信しました",
+      "linkDesc": "リンクにより次のサーバーへの切り替えが求められています。信頼できる URL であることを確認してから適用してください。",
+      "linkApply": "この URL を使用",
+      "linkIgnore": "無視",
+      "okTitle": "接続に成功しました",
+      "okHost": "サーバー",
+      "okVersion": "バージョン",
+      "okFeatures": "機能",
+      "okLegacy": "サーバーは利用可能ですが、バージョン情報が提供されていません(古いバージョンの可能性があります)。",
+      "featurePassword": "パスワードでログイン",
+      "featureGoogle": "Google ログイン",
+      "featureSaml": "SAML シングルサインオン",
+      "featurePush": "プッシュ通知",
+      "errorEmptyDesc": "貴社の kefu サーバーの URL を入力してください。",
+      "errorInvalidDesc": "https://kf.example.com のような URL を入力してください。",
+      "errorHttpsTitle": "https 接続が必要です",
+      "errorNotKefuDesc": "この URL から応答はありましたが、kefu サービスではありません。URL が正しいか確認するか、システム管理者にお問い合わせください。",
+      "errorOfflineTitle": "デバイスがオフラインです",
+      "errorOfflineDesc": "Wi-Fi またはモバイルネットワークを確認してから、もう一度お試しください。",
+      "errorTimeoutTitle": "接続がタイムアウトしました",
+      "errorTimeoutDesc": "サーバーから時間内に応答がありませんでした。ネットワークが不安定か、サーバーが混み合っている可能性があります。しばらくしてからもう一度お試しください。",
+      "errorDnsTitle": "サーバーが見つかりません",
+      "errorDnsDesc": "この URL を解決できないか、接続できません。綴りとネットワーク接続を確認し、サーバーの HTTPS 証明書が有効であることを確認してください。"
+    },
+    "login": {
+      "serverLabel": "サーバー",
+      "serverUnknown": "未設定",
+      "changeServer": "サーバーを変更",
+      "changeServerTitle": "サーバーを変更しますか?",
+      "changeServerDesc": "サーバー設定画面に戻ります。別のサーバーに接続した後は、そのサーバーのアカウントで再度ログインする必要があります。",
+      "changeServerConfirm": "変更",
+      "invalidWithTenant": "メールアドレス、パスワード、またはワークスペース ID が正しくありません",
+      "openAuthenticator": "認証アプリで開く",
+      "samlLogin": "SAML シングルサインオンで {{slug}} にログイン",
+      "tenantTitle": "ワークスペースを選択",
+      "tenantHint": "このアカウントは複数のワークスペースに所属しています。ログインするワークスペースを選択してください。",
+      "tenantRequired": "このアカウントは複数のワークスペースに所属しています。「ワークスペース(詳細設定)」にワークスペース ID を入力してください",
+      "workspaceToggle": "ワークスペース(詳細設定)",
+      "workspaceLabel": "ワークスペース ID",
+      "workspacePlaceholder": "例: acme",
+      "workspaceHint": "同じアカウントが複数のワークスペースに所属している場合に入力します。それ以外は空欄のままで構いません。",
+      "workspaceHintSaml": "同じアカウントが複数のワークスペースに所属している場合、または SAML シングルサインオンを使う場合に入力します。それ以外は空欄のままで構いません。",
+      "sso": {
+        "waiting": "ブラウザでログインページを開きました。完了すると自動的にアプリに戻ります。",
+        "completing": "ログインを完了しています…",
+        "errOpenBrowser": "システムブラウザを開けませんでした。もう一度お試しください",
+        "errSamlDisabled": "このワークスペースでは SAML シングルサインオンが有効になっていません。管理者にお問い合わせください",
+        "errNotInvited": "このアカウントはワークスペースに招待されていません。管理者にお問い合わせください",
+        "errUnavailable": "シングルサインオンは一時的に利用できません。しばらくしてからもう一度お試しください",
+        "errInvalidRequest": "ログインリクエストが無効です。アプリをアップデートしてから再度お試しください",
+        "errExpired": "ログインの有効期限が切れました。もう一度ログインしてください",
+        "errVerify": "ログインの検証に失敗しました。もう一度ログインしてください",
+        "errIpBlocked": "現在のネットワークアドレスはログイン許可リストに含まれていません。管理者にお問い合わせください",
+        "err2faEnroll": "組織で 2 段階認証が必須になっています。メールアドレスとパスワードでログインして設定を完了してください",
+        "errSuspended": "このワークスペースは停止されています。管理者にお問い合わせください",
+        "errRateLimited": "試行回数が多すぎます。しばらくしてから再試行してください",
+        "errNetwork": "サーバーに接続できません。ネットワークを確認してからもう一度お試しください",
+        "errSamlFailed": "SAML シングルサインオンに失敗しました。もう一度お試しください"
+      }
+    },
+    "update": {
+      "title": "アプリをアップデートしてください",
+      "desc": "このサーバーではバージョン {{min}} 以上が推奨されています(現在 {{current}})。一部の機能が正常に動作しない可能性があります。",
+      "dismiss": "後で"
+    }
+  },
+  "mobile": {
+    "composer": {
+      "placeholder": "メッセージを入力…(/ で定型文)",
+      "more": "その他のツール",
+      "closePanel": "パネルを閉じる",
+      "enhanceNeedsText": "先に内容を入力してください",
+      "cannedEmpty": "利用できる定型文はありません",
+      "loading": "読み込み中…"
+    },
+    "message": {
+      "actions": "メッセージ操作"
+    },
+    "tabBar": "メインタブ",
+    "tab": {
+      "visitors": "訪問者",
+      "more": "その他",
+      "unreadLabel": "{{label}}、未読 {{count}} 件"
+    },
+    "openMenu": "メニューを開く",
+    "secondaryNav": "サブメニュー",
+    "secondaryPickerDesc": "移動先を選択してください",
+    "group": {
+      "account": "アカウント",
+      "team": "チーム",
+      "conversation": "会話",
+      "ai": "AI",
+      "channels": "チャネル",
+      "advanced": "詳細設定"
+    },
+    "search": {
+      "hint": "キーワードを入力して会話・メッセージ・連絡先を検索"
+    },
+    "drawer": {
+      "desc": "ナビゲーション、オペレーター状態、アカウント設定",
+      "darkMode": "ダークモード",
+      "version": "バージョン {{version}}",
+      "toggleSub": "{{label}} のサブメニューを展開"
+    },
+    "context": {
+      "title": "訪問者情報とツール"
+    },
+    "conv": {
+      "back": "会話一覧に戻る",
+      "moreActions": "その他の操作",
+      "backToActions": "戻る",
+      "snoozedNotice": "{{duration}} スヌーズしました",
+      "unsnoozedNotice": "スヌーズを解除しました",
+      "snoozeFailed": "スヌーズに失敗しました。もう一度お試しください"
+    },
+    "workspace": {
+      "backToList": "会話一覧に戻る"
+    }
+  },
+  "conn": {
+    "connected": "接続済み",
+    "connecting": "接続中…",
+    "reconnecting": "再接続中…",
+    "mock": "疑似リアルタイム"
   }
 }

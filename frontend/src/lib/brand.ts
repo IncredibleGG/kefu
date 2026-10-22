@@ -1,6 +1,8 @@
 /** 白牌品牌 bootstrap:App 啟動時依網域解析租戶品牌,套用品牌色到 CSS 變數。 */
 import { brandingApi } from "@/api/endpoints";
 import { useBrand } from "@/stores/brand";
+import { serverHost } from "@/lib/server";
+import { setTitleBase } from "@/lib/notify";
 
 /**
  * hex 色 → "H S% L%"(對齊設計系統 --brand 的 HSL 分量格式,見 styles/index.css)。
@@ -55,28 +57,46 @@ export function applyBrandColor(hex: string | null | undefined): void {
   }
 }
 
+/** 內建預設標題(index.html 的 <title>;模組載入時記下,換伺服器到無品牌時還原)。 */
+const BASE_TITLE = typeof document !== "undefined" ? document.title : "";
+
+/** 還原內建外觀:移除 --brand 內聯覆寫、標題回預設(含未讀閃爍的基底)。 */
+function resetBrandLook(): void {
+  try {
+    document.documentElement.style.removeProperty("--brand");
+  } catch {
+    /* 無 document 時略過 */
+  }
+  setTitleBase(BASE_TITLE);
+}
+
+/** 最近一次 bootstrap 的序號:換伺服器時舊伺服器較晚回來的結果不得覆蓋新的。 */
+let bootSeq = 0;
+
 /**
- * 啟動時解析品牌:以 window.location.host 打公開端點。
+ * 啟動時解析品牌:以伺服器 host(lib/server.serverHost;web 為目前頁面 host,
+ * 原生殼為使用者設定的伺服器)打公開端點。原生殼需在伺服器設定完成 / 更換後才呼叫。
  * - 非預設(命中租戶網域)→ 套品牌色到 --brand、更新分頁標題、填入品牌態供登入頁使用。
- * - 預設 / fetch 失敗 → 沿用內建預設,不套色也不崩(僅標記 ready 讓登入頁停止等待)。
+ * - 預設 / fetch 失敗 → 還原內建預設(移除前一個伺服器留下的品牌色與標題),不崩
+ *   (並標記 ready 讓登入頁停止等待)。
  */
 export async function bootstrapBranding(): Promise<void> {
+  const seq = ++bootSeq;
   try {
-    const host = typeof window !== "undefined" ? window.location.host : "";
+    const host = serverHost();
     const brand = await brandingApi.resolveBranding(host);
+    if (seq !== bootSeq) return;
+    // 先清掉前一個伺服器的品牌色(新品牌沒有或色值無效時不可殘留)
+    resetBrandLook();
     if (!brand.is_default) {
       applyBrandColor(brand.primary_color);
-      if (brand.name) {
-        try {
-          document.title = brand.name;
-        } catch {
-          /* 略過 */
-        }
-      }
+      if (brand.name) setTitleBase(brand.name);
     }
     useBrand.getState().setBrand(brand);
   } catch {
+    if (seq !== bootSeq) return;
     // fetch 失敗 / 後端未起:沿用內建預設,標記 ready
+    resetBrandLook();
     useBrand.getState().setBrand({
       tenant_slug: null,
       name: "",

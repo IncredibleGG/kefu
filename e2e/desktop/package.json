@@ -1,0 +1,12 @@
+{
+  "name": "kefu-e2e-desktop",
+  "private": true,
+  "type": "module",
+  "description": "kefu 桌面版(Tauri)登入 E2E,經 tauri-driver + msedgedriver 驅動",
+  "scripts": {
+    "test": "node login.mjs"
+  },
+  "dependencies": {
+    "selenium-webdriver": "4.51.0"
+  }
+}

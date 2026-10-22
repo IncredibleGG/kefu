@@ -1,0 +1,69 @@
+# kefu 原生 App(Capacitor)登入 E2E:伺服器設定 → 登入 → 工作台。Android / iOS 共用。
+# 參數(一律用 -e 傳入,不要寫死在檔案裡):
+#   E2E_SERVER    伺服器網址(與預填的 https://kf.56k.cc 相同時不改輸入框)
+#   E2E_EMAIL     坐席帳號
+#   E2E_PASSWORD  密碼
+# 選擇器以畫面上的繁中文字為主(App 預設語系);WebView 內的 <label for> 點下去會聚焦對應輸入框。
+appId: cc.kf56k.kefu
+name: kefu-login
+---
+- launchApp:
+    clearState: true
+    stopApp: true
+
+# ---------- 1. 伺服器設定頁 ----------
+- runFlow:
+    when:
+      platform: Android
+    file: android/wait-setup.yaml
+- extendedWaitUntil:
+    visible: "測試連線"
+    timeout: 90000
+- waitForAnimationToEnd
+- takeScreenshot: 01-setup
+
+- runFlow:
+    when:
+      true: ${E2E_SERVER != 'https://kf.56k.cc'}
+    file: common/set-server.yaml
+
+- tapOn: "繼續"
+
+# ---------- 2. 登入頁 ----------
+- extendedWaitUntil:
+    visible: "電子郵件"
+    timeout: 60000
+- waitForAnimationToEnd
+- takeScreenshot: 02-login
+
+- tapOn: "電子郵件"
+- inputText: ${E2E_EMAIL}
+- tapOn: "密碼"
+- inputText: ${E2E_PASSWORD}
+
+- runFlow:
+    when:
+      platform: Android
+    file: android/submit-login.yaml
+- runFlow:
+    when:
+      platform: iOS
+    file: ios/submit-login.yaml
+
+# ---------- 3. 工作台 ----------
+# 管理員 / 主管登入後落在「總覽」,坐席落在「工作台」;兩者底部分頁列都有「工作台」
+- extendedWaitUntil:
+    visible: "工作台"
+    timeout: 90000
+- runFlow:
+    when:
+      platform: iOS
+    file: ios/dismiss-alerts.yaml
+- takeScreenshot: 04-after-login
+- tapOn: "工作台"
+- extendedWaitUntil:
+    visible: "未分配"
+    timeout: 60000
+- assertVisible: "佇列"
+- waitForAnimationToEnd
+- takeScreenshot: 05-workspace

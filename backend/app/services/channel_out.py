@@ -1059,7 +1059,19 @@ async def ingest_inbound(
             logger.exception("dispatch.handle_inbound 失敗(session=%s)", session.id)
             await db.rollback()
 
+    # 行動推播「新訪客訊息」:兩段 commit 都完成後才排程(訪客訊息已落地);任務內重讀會話,
+    # 只推給負責的真人坐席(AI 接待中不推)。未設定 FCM 時完全不動作,失敗不影響入站。
+    _notify_push_visitor_message(tenant_id, session.id, getattr(message, "id", None))
     return session.id
+
+
+def _notify_push_visitor_message(tenant_id, session_id, message_id) -> None:
+    try:
+        from app.services import push
+
+        push.on_visitor_message(tenant_id, session_id, message_id)
+    except Exception:  # noqa: BLE001
+        logger.warning("push.on_visitor_message 失敗(session=%s)", session_id, exc_info=True)
 
 
 # --------------------------------------------------------------------------- #

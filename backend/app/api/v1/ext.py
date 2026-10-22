@@ -17,6 +17,7 @@ channel_out),不重複實作。
 """
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query
@@ -34,6 +35,8 @@ from app.services.telegram import NormalizedInbound
 from app.services.visitor import get_or_create_visitor
 
 router = APIRouter()
+
+logger = logging.getLogger("kefu.ext.api")
 
 
 # --------------------------------------------------------------------------- #
@@ -176,6 +179,14 @@ async def create_message(body: ExtMessageIn, ctx: CurrentApiKey, db: DbSession):
                 detail={"code": "not_found", "message": "session not found"},
             ) from None
         await db.commit()
+        # 行動推播「新訪客訊息」:commit 後才排程(此路徑繞過 ingest_inbound,需另掛,
+        # 同 /ws/widget);只推給負責的真人坐席,未設定 FCM 時不動作;失敗絕不影響回應
+        try:
+            from app.services import push
+
+            push.on_visitor_message(ctx.tenant_id, body.session_id, getattr(message, "id", None))
+        except Exception:  # 推播失敗絕不影響回應
+            logger.warning("push.on_visitor_message 失敗(session=%s)", body.session_id, exc_info=True)
         return ok(_message_out(message))
 
     if body.channel_id is not None and body.visitor_external_id:
