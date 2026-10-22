@@ -4,9 +4,10 @@
 用法:python3 e2e/scripts/redact.py <目錄>
 讀環境變數 E2E_EMAIL、E2E_PASSWORD。repo 是公開的,artifact 任何登入 GitHub 的人都能下載。
 
-- 驅動程式 / 裝置的原始記錄(msedgedriver、XCTest、模擬器)會逐字或拆段記下輸入內容
-  (例如 iOS 先打第一個字再打其餘),遮蔽無法保證完整 → 直接刪除。
-- Maestro 的 Android driver 打每個字前會在 logcat 記一行字元碼(`D Maestro : 97`)→ 這類行整行刪除。
+- 驅動程式 / 裝置的原始記錄(msedgedriver、XCTest、模擬器、Maestro 存的完整 device-logcat)會逐字或
+  拆段記下輸入內容(例如 iOS 先打第一個字再打其餘、Android 每個字一行字元碼 / 鍵碼),遮蔽無法保證完整
+  → 直接刪除;CI 自己收的 Android logcat 也只收白名單 tag。
+- 其他檔案裡逐字的按鍵記錄(`D Maestro : 97`、`D UiDevice: Pressing keycodes [29] …`)整行刪除。
 - 其餘非圖片檔一律以位元組處理,不因編碼問題略過:遮蔽帳密每一段長度 ≥ 一半(至少 4)的子字串,
   涵蓋 UTF-8、UTF-16LE、JSON 跳脫、URL 編碼、HTML 跳脫,所以輸入到一半或拆段記錄的片段也會被遮。
 - 登入後的 session token(JWT)也一併遮蔽:debug 版 Capacitor 會把外掛呼叫的資料(含存 token)印進 logcat。
@@ -27,12 +28,15 @@ import sys
 import urllib.parse
 
 IMAGE_EXT = {".png", ".jpg", ".jpeg"}
-DROP = ["msedgedriver*.log", "xctest_runner*.log", "device-xctest.log", "device-simulator.log"]
+DROP = ["msedgedriver*.log", "xctest_runner*.log", "device-xctest.log", "device-simulator.log", "device-logcat.txt"]
 KEEP_SHOTS = ("01-", "02-", "04-", "05-")
 ATTEMPT_DIR = re.compile(r"^attempt-\d+$")
 MASK = "***"
-# 「D Maestro : 112」「D/Maestro( 123): 112」這類逐字字元碼記錄(整行刪除)
-MAESTRO_KEYCODE_LINE = re.compile(rb"(?m)^[^\n]*\bMaestro\b[^\n:]*:[ \t]*\d{1,5}[ \t]*\r?(?:\n|\Z)")
+# 輸入工具逐字記下的按鍵(整行刪除):Maestro driver 的字元碼「D Maestro : 112」、
+# UiDevice 的「D UiDevice: Pressing keycodes [29] with modifier 0.」
+INPUT_TRACE_LINE = re.compile(
+    rb"(?m)^[^\n]*(?:\bMaestro\b[^\n:]*:[ \t]*\d{1,5}[ \t]*|\bUiDevice\b[^\n]*\bPressing key[^\n]*)\r?(?:\n|\Z)"
+)
 # JWT(eyJ 開頭、三段 base64url)的 UTF-8 與 UTF-16LE(每個字元後接 \x00)位元組樣式
 _SEG8 = rb"[A-Za-z0-9_\-]{8,}"
 _SEG16 = rb"(?:[A-Za-z0-9_\-]\x00){8,}"
@@ -147,7 +151,7 @@ def main() -> int:
             try:
                 with open(path, "rb") as f:
                     raw = f.read()
-                new = MAESTRO_KEYCODE_LINE.sub(b"", raw)
+                new = INPUT_TRACE_LINE.sub(b"", raw)
                 for pattern, mask in JWT_PATTERNS:
                     new = pattern.sub(mask, new)
                 for needle, mask in needles:
@@ -159,7 +163,7 @@ def main() -> int:
                 leaked = (
                     any(n in new for n in whole)
                     or any(p.search(new) for p, _ in JWT_PATTERNS)
-                    or MAESTRO_KEYCODE_LINE.search(new)
+                    or INPUT_TRACE_LINE.search(new)
                 )
                 if leaked:
                     raise ValueError("遮蔽後仍含帳密或 token")

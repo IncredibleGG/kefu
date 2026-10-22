@@ -286,15 +286,18 @@ jobs:
           pkg="cc.kf56k.kefu"
           apk="$GITHUB_WORKSPACE/pkg/kefu-android-debug.apk"
           collect() {
-            # Maestro 的 driver 打每個字前會記一行字元碼(tag Maestro),不收(redact.py 另有整行刪除)
-            adb logcat -d '*:V' 'Maestro:S' > "$out/logcat.txt" 2>&1 || true
+            # 只收白名單 tag,不收完整 logcat:輸入工具會把打的每個字記下來(Maestro 的字元碼、
+            # UiDevice 的「Pressing keycodes」…),逐一封鎖封不完;redact.py 另會刪掉 Maestro 存的完整副本
+            adb logcat -d -s ActivityManager:I ActivityTaskManager:I AndroidRuntime:E \
+              chromium:V Capacitor:V Capacitor/Console:V > "$out/logcat.txt" 2>&1 || true
             adb logcat -d -s chromium:V Capacitor:V Capacitor/Console:V AndroidRuntime:E > "$out/logcat-app.txt" 2>&1 || true
             adb logcat -d -b crash > "$out/logcat-crash.txt" 2>&1 || true
             cp -R "$HOME/.maestro/tests" "$out/maestro-tests" 2>/dev/null || true
-            # wait-setup.yaml 會在畫面空白時重啟 App 讓流程繼續;重啟與 kefu 自己的閃退 / ANR 要看得見
+            # wait-setup.yaml 會在畫面空白時重啟 App 讓流程繼續;重啟與 kefu 自己的閃退 / ANR 要看得見。
+            # 只算實際執行完成的 launchApp(commands.json 裡巢狀指令是各自一筆,含略過的)
             for f in "$out"/attempt-*/maestro-output/*/*/commands.json; do
               [ -f "$f" ] || continue
-              n=$(grep -o '"launchAppCommand"' "$f" | wc -l)
+              n=$(python3 -c 'import json, sys; print(sum(1 for e in json.load(open(sys.argv[1])) if "launchAppCommand" in e.get("command", {}) and e.get("metadata", {}).get("status") == "COMPLETED"))' "$f" 2>/dev/null || echo 0)
               if [ "$n" -gt 1 ]; then
                 echo "::warning title=e2e-android::${f#$out/}:App 被重新啟動 $((n - 1)) 次(wait-setup.yaml)"
               fi

@@ -44,11 +44,17 @@ async function snapshot(driver, name) {
   }
 }
 
-/** 清空帳號 / 密碼框(含 React 同步到 value 屬性的值):打過帳密後的失敗截圖與 DOM 才不會帶出帳密 */
+/**
+ * 清空帳號 / 密碼框:打過帳密後的失敗截圖與 DOM 才不會帶出帳密。
+ * 用原生 setter + input 事件連 React 的狀態一起清掉(只改 el.value 的話,之後重繪會把帳號寫回去),
+ * 再拿掉 React 同步到 value 屬性的值。
+ */
 async function clearCredentials(driver) {
   await driver.executeScript(`
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
     for (const el of document.querySelectorAll("input[type='email'], input[type='password'], #email, #password")) {
-      el.value = "";
+      setValue.call(el, "");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
       el.removeAttribute("value");
     }
   `);

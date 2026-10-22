@@ -29,8 +29,9 @@ Repository secrets(**值不可寫進檔案或印到記錄**):
 
 - 刪除會逐字或拆段記下輸入內容的原始記錄(`msedgedriver*.log`、`xctest_runner*.log`、`device-xctest.log`、
   `device-simulator.log`);`msedgedriver` 的記錄本來就寫在 runner 暫存目錄,不進 artifact。
-- Maestro 的 Android driver 每打一個字會在 logcat 記一行字元碼(`D Maestro : 97`):收 logcat 時就排除
-  `Maestro` tag,redact.py 再把這類行整行刪除。
+- 輸入工具會逐字記下按鍵(Maestro 的字元碼 `D Maestro : 97`、`D UiDevice: Pressing keycodes [29]`…),
+  所以 Android E2E 的 logcat 只收白名單 tag(ActivityManager、ActivityTaskManager、AndroidRuntime、chromium、
+  Capacitor),Maestro 自己存的完整 `device-logcat.txt` 刪除,其他檔案裡的這類行整行刪除。
 - 其餘非圖片檔以位元組處理,遮蔽帳號與密碼每一段長度 ≥ 一半(至少 4)的子字串(含 UTF-16、JSON、URL、
   HTML 跳脫),以及登入後的 session token(JWT;debug 版 Capacitor 會把存 token 的呼叫印進 logcat);
   處理不了的檔案直接刪除。
