@@ -187,7 +187,11 @@ jobs:
           sleep 20
           screencapture -x "$out/macos.png"
           bounds "上次 3000×2000(應縮放置中)"
-          pkill -f "$app/Contents/MacOS/" || true
+          if ! pgrep -fl "$app/Contents/MacOS/" > "$out/processes-large.txt"; then
+            echo "情境 1 找不到 App 行程(可能已閃退)" | tee "$out/processes-large.txt"
+            exit 1
+          fi
+          pkill -f "$app/Contents/MacOS/"
           sleep 3
 
           seed 900 560 40 60
@@ -244,7 +248,8 @@ jobs:
           if (-not $exe) { throw '安裝後找不到 kefu.exe' }
           "exe: $exe" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
           # window-state 還原情境:上次在大螢幕上最大化(一般尺寸 1800×1000)→ 這台小螢幕上仍要最大化
-          # (縮放 / 置中會把最大化取消,所以已最大化時不可再縮);結果記在 window.txt
+          # (縮放 / 置中會把最大化取消,所以已最大化時不可再縮);使用者再按「還原」時,
+          # 一般尺寸比螢幕大 → 要縮進可用區域。結果記在 window.txt
           $stateDir = Join-Path $env:APPDATA 'cc.kf56k.kefu'
           New-Item -ItemType Directory -Force $stateDir | Out-Null
           '{"main":{"width":1800,"height":1000,"x":-8,"y":-8,"prev_x":60,"prev_y":40,"maximized":true,"visible":true,"decorated":true,"fullscreen":false}}' |
@@ -273,13 +278,21 @@ jobs:
             Add-Type -Namespace KefuSmoke -Name Win32 -MemberDefinition @'
           [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
           [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+          [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
           [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
           '@
-            $rect = New-Object KefuSmoke.Win32+RECT
             $hwnd = $app.MainWindowHandle
-            [void][KefuSmoke.Win32]::GetWindowRect($hwnd, [ref]$rect)
-            $msg = "上次最大化(應仍最大化): hwnd=$hwnd maximized=$([KefuSmoke.Win32]::IsZoomed($hwnd)) " +
-              "rect=($($rect.Left),$($rect.Top))-($($rect.Right),$($rect.Bottom))"
+            function Get-WindowState([string]$label) {
+              $rect = New-Object KefuSmoke.Win32+RECT
+              [void][KefuSmoke.Win32]::GetWindowRect($hwnd, [ref]$rect)
+              "${label}: hwnd=$hwnd maximized=$([KefuSmoke.Win32]::IsZoomed($hwnd)) " +
+                "rect=($($rect.Left),$($rect.Top))-($($rect.Right),$($rect.Bottom))"
+            }
+            $msg = @(Get-WindowState '上次最大化(應仍最大化)')
+            [void][KefuSmoke.Win32]::ShowWindow($hwnd, 9)   # SW_RESTORE:使用者按「還原」
+            Start-Sleep -Seconds 3
+            $msg += Get-WindowState '按還原後(應縮進可用區域、置中)'
+            Save-Screen 'windows-restored.png'
           } catch {
             $msg = "視窗狀態檢查失敗:$_"
           }

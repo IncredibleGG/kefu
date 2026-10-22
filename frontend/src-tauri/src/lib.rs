@@ -143,6 +143,24 @@ fn fit_main_window_to_screen(app: &AppHandle) {
     }
 }
 
+/// 主視窗上一次 Resized 時是否為最大化 / 全螢幕,用來偵測「從最大化還原」。
+#[cfg(desktop)]
+static MAIN_WINDOW_WAS_MAXIMIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 從最大化 / 全螢幕還原時再縮一次:啟動時最大化的視窗不縮(見 fit_main_window_to_screen),
+/// 但 window-state 存的一般尺寸可能是在大螢幕上存的,還原後會比這台螢幕大。
+#[cfg(desktop)]
+fn refit_after_unmaximize(window: &tauri::Window) {
+    use std::sync::atomic::Ordering;
+    if window.label() != MAIN_WINDOW || window.is_minimized().unwrap_or(false) {
+        return;
+    }
+    let big = window.is_maximized().unwrap_or(false) || window.is_fullscreen().unwrap_or(false);
+    if MAIN_WINDOW_WAS_MAXIMIZED.swap(big, Ordering::Relaxed) && !big {
+        fit_main_window_to_screen(window.app_handle());
+    }
+}
+
 /// 啟動時:先讓主視窗放得進螢幕,再(非開機自動啟動時)顯示。
 /// macOS 的 set_size / set_position(包括 window-state 在建立視窗時的還原)是排進 GCD 主佇列
 /// 非同步執行的,setup 當下讀到的還是設定檔的預設尺寸:還原的過大尺寸會漏縮,小螢幕上則會用
@@ -348,6 +366,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            #[cfg(desktop)]
+            if let WindowEvent::Resized(_) = event {
+                refit_after_unmaximize(window);
+            }
             // 關閉主視窗 = 縮到系統匣(真正退出走系統匣選單「結束」或 macOS ⌘Q)
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == MAIN_WINDOW {
