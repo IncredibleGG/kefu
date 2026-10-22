@@ -87,7 +87,6 @@ fn apply_unread(app: &AppHandle, window: Option<&WebviewWindow>, count: u32) {
     }
 }
 
-/// 把主視窗叫到前景:取消最小化 → 顯示 → 聚焦
 /// 計算縮放後的主視窗尺寸(實體像素);已能完整放進螢幕可用區域時回 None(維持原樣)。
 /// 超出時縮到可用區域的 90%,保留邊距。
 fn fitted_size(outer: (u32, u32), area: (u32, u32)) -> Option<(u32, u32)> {
@@ -108,12 +107,17 @@ fn centered_origin(area_pos: (i32, i32), area: (u32, u32), size: (u32, u32)) -> 
 
 /// 小螢幕防溢出:主視窗(預設 1280×800,或 window-state 還原的尺寸)比所在螢幕的可用區域
 /// (扣除工作列 / Dock / 選單列)大時縮小並置中。例如 1366×768 的 Windows 筆電扣掉工作列
-/// 只剩約 728px 高,不縮的話視窗下緣會超出螢幕。須在視窗顯示前呼叫。
+/// 只剩約 728px 高,不縮的話視窗下緣會超出螢幕。須在 window-state 還原之後、視窗顯示前呼叫
+/// (見 place_and_reveal_main_window)。
 #[cfg(desktop)]
 fn fit_main_window_to_screen(app: &AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
         return;
     };
+    // 還原成最大化 / 全螢幕時由系統放進可用區域;這時 set_size / set_position 會把最大化取消
+    if window.is_maximized().unwrap_or(false) || window.is_fullscreen().unwrap_or(false) {
+        return;
+    }
     let monitor = window
         .current_monitor()
         .ok()
@@ -139,6 +143,33 @@ fn fit_main_window_to_screen(app: &AppHandle) {
     }
 }
 
+/// 啟動時:先讓主視窗放得進螢幕,再(非開機自動啟動時)顯示。
+/// macOS 的 set_size / set_position(包括 window-state 在建立視窗時的還原)是排進 GCD 主佇列
+/// 非同步執行的,setup 當下讀到的還是設定檔的預設尺寸:還原的過大尺寸會漏縮,小螢幕上則會用
+/// 預設尺寸誤判而蓋掉使用者存的尺寸與位置。所以 macOS 上把縮放排在同一個主佇列(先進先出)、
+/// 還原之後執行,顯示再排在縮放之後,避免先以舊位置顯示再跳動。
+#[cfg(desktop)]
+fn place_and_reveal_main_window(app: AppHandle, reveal: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        use dispatch2::DispatchQueue;
+        DispatchQueue::main().exec_async(move || {
+            fit_main_window_to_screen(&app);
+            if reveal {
+                DispatchQueue::main().exec_async(move || reveal_main_window(&app));
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        fit_main_window_to_screen(&app);
+        if reveal {
+            reveal_main_window(&app);
+        }
+    }
+}
+
+/// 把主視窗叫到前景:取消最小化 → 顯示 → 聚焦
 fn reveal_main_window(app: &AppHandle) {
     let Some(window) = app.get_webview_window(MAIN_WINDOW) else {
         return;
@@ -305,13 +336,12 @@ pub fn run() {
             #[cfg(desktop)]
             build_tray(app.handle())?;
 
-            // 顯示前先確保視窗放得進目前螢幕(小筆電不超出畫面)
-            #[cfg(desktop)]
-            fit_main_window_to_screen(app.handle());
-
-            // 視窗在設定檔裡預設隱藏(避免 window-state 還原尺寸前閃一下);
-            // 一般啟動就顯示,開機自動啟動則只常駐系統匣。
+            // 視窗在設定檔裡預設隱藏(避免 window-state 還原尺寸前閃一下);先確保放得進目前螢幕
+            // (小筆電不超出畫面),一般啟動就顯示,開機自動啟動則只常駐系統匣。
             let launched_by_autostart = std::env::args().any(|arg| arg == AUTOSTART_ARG);
+            #[cfg(desktop)]
+            place_and_reveal_main_window(app.handle().clone(), !launched_by_autostart);
+            #[cfg(not(desktop))]
             if !launched_by_autostart {
                 reveal_main_window(app.handle());
             }

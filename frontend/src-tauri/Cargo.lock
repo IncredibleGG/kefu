@@ -1998,6 +1998,7 @@ dependencies = [
 name = "kefu"
 version = "0.1.0"
 dependencies = [
+ "dispatch2",
  "serde",
  "serde_json",
  "tauri",

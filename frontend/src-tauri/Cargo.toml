@@ -35,3 +35,8 @@ tauri-plugin-fs = "2.7.1"
 tauri-plugin-single-instance = { version = "2.5.4", features = ["deep-link"] }
 tauri-plugin-window-state = "2.5.0"
 tauri-plugin-autostart = "2.7.0"
+
+# 僅 macOS:啟動時把視窗縮放 / 顯示排進 GCD 主佇列,排在 window-state 的非同步還原之後
+# (與 tao 用的是同一個 crate / 版本,不增加新依賴)
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3"

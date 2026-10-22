@@ -162,9 +162,39 @@ jobs:
           # 從網路下載的未簽章 App 會帶 quarantine 屬性,清掉才不會被 Gatekeeper 擋
           xattr -cr "$app"
           codesign -dv "$app" > "$out/codesign.txt" 2>&1 || true
+          # window-state 還原情境(預先寫入上次的視窗狀態再啟動,實際視窗座標記在 window.txt):
+          #   1. 上次的尺寸比螢幕大 → 要縮到可用區域 90% 並置中(macos.png)
+          #   2. 上次是放得下的 900×560、位於 (40,60) → 要原樣保留(macos-small.png)
+          # macOS 的 set_size 是非同步的,讀回舊尺寸就會漏縮 1、誤改 2
+          state_dir="$HOME/Library/Application Support/cc.kf56k.kefu"
+          mkdir -p "$state_dir"
+          seed() {
+            printf '{"main":{"width":%s,"height":%s,"x":%s,"y":%s,"prev_x":%s,"prev_y":%s,"maximized":false,"visible":true,"decorated":true,"fullscreen":false}}' \
+              "$1" "$2" "$3" "$4" "$3" "$4" > "$state_dir/.window-state.json"
+          }
+          cat > "$RUNNER_TEMP/bounds.swift" <<'SWIFT'
+          import CoreGraphics
+          let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+          for w in list where (w[kCGWindowOwnerName as String] as? String) == "kefu" && (w[kCGWindowLayer as String] as? Int) == 0 {
+            print(w[kCGWindowBounds as String] ?? "?")
+          }
+          SWIFT
+          bounds() { echo "$1: $(swift "$RUNNER_TEMP/bounds.swift" 2>&1 | tr '\n' ' ')" | tee -a "$out/window.txt"; }
+          system_profiler SPDisplaysDataType > "$out/display.txt" 2>&1 || true
+
+          seed 3000 2000 0 25
           open -n --stdout "$out/stdout.log" --stderr "$out/stderr.log" "$app"
           sleep 20
           screencapture -x "$out/macos.png"
+          bounds "上次 3000×2000(應縮放置中)"
+          pkill -f "$app/Contents/MacOS/" || true
+          sleep 3
+
+          seed 900 560 40 60
+          open -n --stdout "$out/stdout-small.log" --stderr "$out/stderr-small.log" "$app"
+          sleep 15
+          screencapture -x "$out/macos-small.png"
+          bounds "上次 900×560 於 (40,60)(應原樣保留)"
           log show --last 3m --style compact --predicate 'process == "kefu"' > "$out/system.log" 2>&1 || true
           ls -la ~/Library/Logs/DiagnosticReports > "$out/crash-reports.txt" 2>&1 || true
           if ! pgrep -fl "$app/Contents/MacOS/" > "$out/processes.txt"; then
@@ -213,6 +243,12 @@ jobs:
           }
           if (-not $exe) { throw '安裝後找不到 kefu.exe' }
           "exe: $exe" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
+          # window-state 還原情境:上次在大螢幕上最大化(一般尺寸 1800×1000)→ 這台小螢幕上仍要最大化
+          # (縮放 / 置中會把最大化取消,所以已最大化時不可再縮);結果記在 window.txt
+          $stateDir = Join-Path $env:APPDATA 'cc.kf56k.kefu'
+          New-Item -ItemType Directory -Force $stateDir | Out-Null
+          '{"main":{"width":1800,"height":1000,"x":-8,"y":-8,"prev_x":60,"prev_y":40,"maximized":true,"visible":true,"decorated":true,"fullscreen":false}}' |
+            Set-Content -Path (Join-Path $stateDir '.window-state.json') -Encoding ascii -NoNewline
           $app = Start-Process -FilePath $exe -PassThru `
             -RedirectStandardOutput (Join-Path $out 'stdout.log') `
             -RedirectStandardError (Join-Path $out 'stderr.log')
@@ -233,6 +269,21 @@ jobs:
           $app.Refresh()
           "pid=$($app.Id) hasExited=$($app.HasExited)" | Tee-Object -FilePath (Join-Path $out 'process.txt')
           Save-Screen 'windows.png'
+          try {
+            Add-Type -Namespace KefuSmoke -Name Win32 -MemberDefinition @'
+          [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr hWnd);
+          [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+          [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+          '@
+            $rect = New-Object KefuSmoke.Win32+RECT
+            $hwnd = $app.MainWindowHandle
+            [void][KefuSmoke.Win32]::GetWindowRect($hwnd, [ref]$rect)
+            $msg = "上次最大化(應仍最大化): hwnd=$hwnd maximized=$([KefuSmoke.Win32]::IsZoomed($hwnd)) " +
+              "rect=($($rect.Left),$($rect.Top))-($($rect.Right),$($rect.Bottom))"
+          } catch {
+            $msg = "視窗狀態檢查失敗:$_"
+          }
+          $msg | Tee-Object -FilePath (Join-Path $out 'window.txt')
           Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 1, 2; StartTime = (Get-Date).AddMinutes(-10) } -ErrorAction SilentlyContinue |
             Format-List TimeCreated, ProviderName, Id, Message | Out-File (Join-Path $out 'application-errors.txt')
           if ($app.HasExited) { throw "kefu.exe 已結束(exit=$($app.ExitCode)),可能啟動失敗" }
