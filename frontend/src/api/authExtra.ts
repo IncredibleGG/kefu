@@ -9,7 +9,7 @@
  *    - POST /2fa/setup|enable|disable  2FA 設定
  *  一律走 {ok,data,error} 信封(apiFetch 已解包 data);公開端點以 auth:false 不帶 Bearer。 */
 import { apiFetch, ApiError } from "./client";
-import { setToken } from "@/lib/server";
+import { clearToken, setToken } from "@/lib/server";
 import { useAuth } from "@/stores/auth";
 
 /* ------------------------------ 登入(含 2FA) ------------------------------ */
@@ -83,14 +83,24 @@ export async function finalizeSession(res: LoginAttemptResult): Promise<void> {
   if (!res.access_token) throw new ApiError("NO_TOKEN", "登入回應缺少 token");
   // token 單一來源:lib/server(localStorage 鏡像 + 原生持久儲存;localStorage 不可用時仍以記憶體 state 運作)
   setToken(res.access_token);
+  useAuth.setState({ status: "loading", error: null });
+  // 先載入 /me(api client 讀的是 lib/server 的 token,已可用),再「一次」寫入 store 的 token + staff。
+  // 若先寫 store token,登入頁的 `if (token) <Navigate>` 會在 staff 還是 null 時就導向:
+  // 首頁導向因而在不知道角色的情況下做決定(管理員被送去工作台而非總覽),
+  // 原生 App 還曾因此觸發角色 selector 的無限重繪(React error #185)。
+  try {
+    await useAuth.getState().loadMe();
+  } catch (e) {
+    // /me 失敗(租戶停用、網路…):清掉剛寫入的 token,不留半登入狀態
+    clearToken();
+    useAuth.setState({ token: null, staff: null, status: "error" });
+    throw e;
+  }
   useAuth.setState({
     token: res.access_token,
     isPlatformAdmin: Boolean(res.is_platform_admin),
-    status: "loading",
-    error: null,
+    status: "authed",
   });
-  await useAuth.getState().loadMe();
-  useAuth.setState({ status: "authed" });
 }
 
 /* -------------------------------- 自助註冊 -------------------------------- */

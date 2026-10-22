@@ -96,10 +96,16 @@ export const useAuth = create<AuthState>()(
           const res = await authApi.login(email, password);
           // token 寫入 lib/server(localStorage + 原生儲存,供 api client / WS 讀取)
           setToken(res.access_token);
+          // 先載入 /me 再一次寫入 token + staff(理由同 api/authExtra.finalizeSession:
+          // 避免路由在 staff 為 null 時就依 token 導向)
+          try {
+            await get().loadMe();
+          } catch (meErr) {
+            clearToken();
+            throw meErr;
+          }
           // is_platform_admin 僅登入回應帶回;記住並持久化(/me 不含此欄位)
-          set({ token: res.access_token, isPlatformAdmin: Boolean(res.is_platform_admin) });
-          await get().loadMe();
-          set({ status: "authed" });
+          set({ token: res.access_token, isPlatformAdmin: Boolean(res.is_platform_admin), status: "authed" });
         } catch (e) {
           set({ status: "error", error: e instanceof Error ? e.message : "登入失敗" });
           throw e;
