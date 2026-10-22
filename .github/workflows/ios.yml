@@ -13,6 +13,8 @@ on:
       - '!frontend/android/**'
       - 'clients/**'
       - '.github/workflows/ios.yml'
+      - 'e2e/maestro/**'
+      - 'e2e/scripts/**'
   pull_request:
     paths:
       - 'frontend/**'
@@ -20,6 +22,8 @@ on:
       - '!frontend/android/**'
       - 'clients/**'
       - '.github/workflows/ios.yml'
+      - 'e2e/maestro/**'
+      - 'e2e/scripts/**'
   workflow_dispatch:
   workflow_call:
 

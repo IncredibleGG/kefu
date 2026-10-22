@@ -11,6 +11,8 @@ on:
       - '!frontend/ios/**'
       - 'clients/**'
       - '.github/workflows/desktop.yml'
+      - 'e2e/desktop/**'
+      - 'e2e/scripts/**'
   pull_request:
     paths:
       - 'frontend/**'
@@ -18,6 +20,8 @@ on:
       - '!frontend/ios/**'
       - 'clients/**'
       - '.github/workflows/desktop.yml'
+      - 'e2e/desktop/**'
+      - 'e2e/scripts/**'
   workflow_dispatch:
     inputs:
       universal:
