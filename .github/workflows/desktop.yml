@@ -216,17 +216,23 @@ jobs:
           $app = Start-Process -FilePath $exe -PassThru `
             -RedirectStandardOutput (Join-Path $out 'stdout.log') `
             -RedirectStandardError (Join-Path $out 'stderr.log')
-          Start-Sleep -Seconds 20
-          $app.Refresh()
-          "pid=$($app.Id) hasExited=$($app.HasExited)" | Tee-Object -FilePath (Join-Path $out 'process.txt')
           Add-Type -AssemblyName System.Windows.Forms
           Add-Type -AssemblyName System.Drawing
-          $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
-          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
-          $g = [System.Drawing.Graphics]::FromImage($bmp)
-          $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
-          $bmp.Save((Join-Path $out 'windows.png'), [System.Drawing.Imaging.ImageFormat]::Png)
-          $g.Dispose(); $bmp.Dispose()
+          function Save-Screen([string]$name) {
+            $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            $g = [System.Drawing.Graphics]::FromImage($bmp)
+            $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size)
+            $bmp.Save((Join-Path $out $name), [System.Drawing.Imaging.ImageFormat]::Png)
+            $g.Dispose(); $bmp.Dispose()
+          }
+          # 全新 runner 上 WebView2 首次啟動偶爾超過 20 秒才畫出頁面:20 秒截一張、45 秒再截最終畫面
+          Start-Sleep -Seconds 20
+          Save-Screen 'windows-20s.png'
+          Start-Sleep -Seconds 25
+          $app.Refresh()
+          "pid=$($app.Id) hasExited=$($app.HasExited)" | Tee-Object -FilePath (Join-Path $out 'process.txt')
+          Save-Screen 'windows.png'
           Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 1, 2; StartTime = (Get-Date).AddMinutes(-10) } -ErrorAction SilentlyContinue |
             Format-List TimeCreated, ProviderName, Id, Message | Out-File (Join-Path $out 'application-errors.txt')
           if ($app.HasExited) { throw "kefu.exe 已結束(exit=$($app.ExitCode)),可能啟動失敗" }

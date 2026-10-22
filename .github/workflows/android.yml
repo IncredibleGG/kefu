@@ -294,6 +294,9 @@ jobs:
           adb install -r -g "$apk" 2>&1 | tee "$out/install.log"
           adb shell pm list packages | grep -q "$pkg" || { echo "安裝失敗:找不到 $pkg"; exit 1; }
           maestro --version | tee "$out/maestro-version.txt"
+          # 剛開機的模擬器上系統程式(常見是 Pixel Launcher)容易 ANR,「isn't responding」框會蓋住 App
+          # (曾兩次重跑都被擋)。關掉系統錯誤對話框:ANR 時系統改為直接重啟該程式,不再跳框
+          adb shell settings put global hide_error_dialogs 1 || true
           # 跑 e2e/maestro/login.yaml,失敗會重跑一次(模擬器偶發 Device server died);截圖收在 screenshots/
           E2E_PLATFORM=android bash "$GITHUB_WORKSPACE/e2e/maestro/run.sh" "$out"
           SH

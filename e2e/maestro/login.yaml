@@ -12,6 +12,10 @@ name: kefu-login
     stopApp: true
 
 # ---------- 1. 伺服器設定頁 ----------
+- runFlow:
+    when:
+      platform: Android
+    file: android/dismiss-anr.yaml
 - extendedWaitUntil:
     visible: "測試連線"
     timeout: 90000

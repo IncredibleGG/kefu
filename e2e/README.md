@@ -50,7 +50,9 @@ e2e/
 │   ├── run.sh                   # CI 入口:跑 login.yaml(失敗重跑一次)、收截圖到 screenshots/
 │   ├── login.yaml               # Android / iOS 共用主流程
 │   ├── common/set-server.yaml   # E2E_SERVER 與預填值不同時改網址
-│   ├── android/submit-login.yaml  # 收鍵盤 + 點「登入」
+│   ├── android/
+│   │   ├── submit-login.yaml    # 收鍵盤 + 點「登入」
+│   │   └── dismiss-anr.yaml     # 模擬器系統程式 ANR 框蓋住 App 時按「Close app」
 │   └── ios/
 │       ├── submit-login.yaml    # 密碼框按 Enter 送出(WKWebView 收鍵盤不穩)
 │       └── dismiss-alerts.yaml  # 系統權限詢問一律允許
