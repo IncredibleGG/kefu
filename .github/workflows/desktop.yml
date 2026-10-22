@@ -302,6 +302,10 @@ jobs:
         if: steps.cfg.outputs.ok == 'true'
         working-directory: frontend
         shell: bash
+        env:
+          # 暫時性診斷:用 React 開發版建置,主控台會有完整錯誤訊息與元件堆疊
+          # (追查原生環境登入後的 React error #185)。查明後移除,恢復與正式版相同的 production 建置。
+          NODE_ENV: development
         run: |
           set -euo pipefail
           node -e '

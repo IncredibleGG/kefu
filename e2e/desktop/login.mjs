@@ -63,6 +63,33 @@ async function pathname(driver) {
   return new URL(await driver.getCurrentUrl()).pathname;
 }
 
+// 主控台攔截器:收集 App 執行期的完整錯誤原文(含 React 開發版的元件堆疊),
+// 結束時寫成 console-errors.txt。msedgedriver 自己的日誌會把長字串截斷,不夠用。
+const CONSOLE_HOOK = `
+if (!window.__kefuErrsInstalled) {
+  window.__kefuErrsInstalled = true;
+  window.__kefuErrs = window.__kefuErrs || [];
+  const fmt = (x) => { try { return x && x.stack ? x.stack : (typeof x === "string" ? x : JSON.stringify(x)); } catch (_) { return String(x); } };
+  const orig = console.error.bind(console);
+  console.error = (...a) => { try { window.__kefuErrs.push(a.map(fmt).join(" | ").slice(0, 8000)); } catch (_) {} orig(...a); };
+  window.addEventListener("error", (e) => { try { window.__kefuErrs.push("window.onerror: " + fmt(e.error || e.message)); } catch (_) {} });
+  window.addEventListener("unhandledrejection", (e) => { try { window.__kefuErrs.push("unhandledrejection: " + fmt(e.reason)); } catch (_) {} });
+}`;
+
+async function hookConsole(driver) {
+  await driver.executeScript(CONSOLE_HOOK).catch((e) => log("掛載主控台攔截器失敗:", e.message));
+}
+
+async function dumpConsole(driver) {
+  try {
+    const errs = await driver.executeScript("return window.__kefuErrs || []");
+    await writeFile(path.join(out, "console-errors.txt"), errs.join("\n\n----\n\n"));
+    log(`主控台錯誤 ${errs.length} 筆(全文見 console-errors.txt)`);
+  } catch (e) {
+    log("讀取主控台錯誤失敗:", e.message);
+  }
+}
+
 async function main() {
   await mkdir(out, { recursive: true });
   const caps = new Capabilities();
@@ -83,6 +110,7 @@ async function main() {
   log("啟動", exe, "via", webdriverUrl);
   const driver = await new Builder().withCapabilities(caps).usingServer(webdriverUrl).build();
   let step = "init";
+  await hookConsole(driver);
   try {
     // ---------- 1. 伺服器設定頁 ----------
     step = "setup";
@@ -99,6 +127,7 @@ async function main() {
     step = "login";
     const emailInput = await visible(driver, "input#email[type='email']", 60_000);
     const pwInput = await visible(driver, "input#password[type='password']", 10_000);
+    await hookConsole(driver); // 伺服器設定送出後若頁面重新載入,鉤子會消失,補掛一次
     await shot(driver, "02-login");
     await typeInto(emailInput, email);
     await typeInto(pwInput, password);
@@ -154,6 +183,7 @@ async function main() {
     await writeFile(path.join(out, "result.json"), JSON.stringify({ ok: false, step, error: e.message }, null, 2));
     process.exitCode = 1;
   } finally {
+    await dumpConsole(driver);
     await driver.quit().catch(() => undefined);
   }
 }
