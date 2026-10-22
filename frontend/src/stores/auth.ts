@@ -32,6 +32,15 @@ interface AuthState {
   logout: (opts?: LogoutOptions) => Promise<void>;
 }
 
+/**
+ * 取目前坐席角色的 selector:一律用這個,不要寫 `useAuth((s) => s.staff?.roles ?? [])`。
+ * Zustand v5 以參照比較 selector 結果;`?? []` 在 staff 尚未載入(或沒有 roles)時每次都回傳
+ * 新陣列,會被當成狀態改變而無限重繪(React error #185 Maximum update depth exceeded)。
+ * 這裡回傳模組層級的同一個空陣列,參照穩定。
+ */
+const EMPTY_ROLES: string[] = [];
+export const selectRoles = (s: AuthState): string[] => s.staff?.roles ?? EMPTY_ROLES;
+
 /* --------------------------- 推播裝置登記標記 --------------------------- */
 /** usePushRegistration 成功 POST /devices 後呼叫;登出時據此撤銷。 */
 export function markDeviceRegistered(): void {

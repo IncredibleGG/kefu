@@ -34,7 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn, initials } from "@/lib/utils";
-import { useAuth } from "@/stores/auth";
+import { useAuth, selectRoles } from "@/stores/auth";
 import { ApiError } from "@/api/client";
 import {
   organizationApi,
@@ -63,7 +63,7 @@ export function OrganizationPage() {
   const qc = useQueryClient();
 
   // organization.manage / admin 才可異動;與後端 Principal.require 同語意
-  const roles = useAuth((s) => s.staff?.roles ?? []);
+  const roles = useAuth(selectRoles);
   const canManage = roles.includes("admin") || roles.includes("organization.manage");
 
   const treeQuery = useQuery({

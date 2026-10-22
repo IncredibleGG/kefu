@@ -25,11 +25,11 @@ import { SettingsPage } from "@/pages/SettingsPage";
 import { BillingPage } from "@/pages/BillingPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { PublicHelpCenter } from "@/pages/PublicHelpCenter";
-import { useAuth } from "@/stores/auth";
+import { useAuth, selectRoles } from "@/stores/auth";
 
 /** 登入首頁:管理員 / 主管 → 總覽儀表板;其餘坐席 → 工作台。 */
 function RootRedirect() {
-  const roles = useAuth((s) => s.staff?.roles ?? []);
+  const roles = useAuth(selectRoles);
   const isAdmin = roles.includes("admin") || roles.includes("supervisor");
   return <Navigate to={isAdmin ? "/dashboard" : "/workspace"} replace />;
 }
