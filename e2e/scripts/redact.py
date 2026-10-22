@@ -1,56 +1,93 @@
 #!/usr/bin/env python3
-"""把 E2E 產物目錄裡所有文字檔中的帳密換成 ***(上傳 artifact 前執行)。
+"""把 E2E 產物目錄裡的帳密遮掉(上傳 artifact 前執行;本程式失敗時 workflow 不上傳)。
 
 用法:python3 e2e/scripts/redact.py <目錄>
-讀環境變數 E2E_EMAIL、E2E_PASSWORD;同時處理 JSON 跳脫、URL 編碼,以及輸入到一半留下的前綴。
-二進位檔(png、mp4 等)略過;密碼框在截圖裡本來就是遮罩。
+讀環境變數 E2E_EMAIL、E2E_PASSWORD。repo 是公開的,artifact 任何登入 GitHub 的人都能下載。
+
+- 驅動程式 / 裝置的原始記錄(msedgedriver、XCTest、模擬器)會逐字或拆段記下輸入內容
+  (例如 iOS 先打第一個字再打其餘),遮蔽無法保證完整 → 直接刪除。
+- 其餘非圖片檔一律以位元組處理,不因編碼問題略過:遮蔽帳密每一段長度 ≥ 一半(至少 4)的子字串,
+  涵蓋 UTF-8、UTF-16LE、JSON 跳脫、URL 編碼,所以輸入到一半或拆段記錄的片段也會被遮。
+- 讀寫失敗的檔案刪除;刪不掉就以非 0 結束。遮完再掃一次,仍找得到完整帳密的檔案也刪除。
+- 截圖(png / jpg)不處理:密碼框本來就是遮罩;失敗截圖可能看得到輸入中的 email。
 """
+import fnmatch
 import json
 import os
 import sys
 import urllib.parse
 
-TEXT_EXT = {".txt", ".log", ".json", ".xml", ".html", ".yaml", ".yml", ".csv", ".md", ""}
+IMAGE_EXT = {".png", ".jpg", ".jpeg"}
+DROP = ["msedgedriver*.log", "xctest_runner*.log", "device-xctest.log", "device-simulator.log"]
+MASK = "***"
 
 
-def variants(secret: str) -> list[str]:
+def pieces(secret: str) -> set[str]:
+    """secret 本身與所有長度 ≥ max(4, 一半) 的子字串(前綴、後綴、中段)。"""
+    m = min(len(secret), max(4, (len(secret) + 1) // 2))
+    return {secret[i:j] for i in range(len(secret)) for j in range(i + m, len(secret) + 1)}
+
+
+def encoded(text: str) -> set[tuple[bytes, bytes]]:
+    forms = {
+        text,
+        json.dumps(text)[1:-1],
+        json.dumps(text, ensure_ascii=False)[1:-1],
+        urllib.parse.quote(text, safe=""),
+        urllib.parse.quote_plus(text),
+    }
     out = set()
-    # 輸入到一半就失敗時,元件樹 / 記錄裡會留下「前半段」;夠長的前綴一併遮蔽
-    min_prefix = max(6, (len(secret) + 1) // 2)
-    for n in range(min(len(secret), min_prefix), len(secret) + 1):
-        p = secret[:n]
-        out |= {p, json.dumps(p)[1:-1], urllib.parse.quote(p, safe=""), urllib.parse.quote_plus(p)}
-    return sorted((v for v in out if v), key=len, reverse=True)
+    for f in forms:
+        if f:
+            out.add((f.encode("utf-8"), MASK.encode("utf-8")))
+            out.add((f.encode("utf-16-le"), MASK.encode("utf-16-le")))
+    return out
+
+
+def remove(path: str) -> bool:
+    try:
+        os.remove(path)
+        return True
+    except OSError as e:
+        print(f"redact: 無法刪除 {path}:{e}", file=sys.stderr)
+        return False
 
 
 def main() -> int:
     root = sys.argv[1] if len(sys.argv) > 1 else "."
-    secrets = [os.environ.get(k, "") for k in ("E2E_PASSWORD", "E2E_EMAIL")]
-    needles = [v for s in secrets if len(s) >= 3 for v in variants(s)]
-    if not needles:
-        print("redact: 沒有需要遮蔽的值")
-        return 0
-    changed = 0
+    secrets = [s for s in (os.environ.get(k, "") for k in ("E2E_PASSWORD", "E2E_EMAIL")) if len(s) >= 3]
+    needles = sorted({pair for s in secrets for p in pieces(s) for pair in encoded(p)}, key=lambda p: -len(p[0]))
+    whole = [n for s in secrets for n, _ in encoded(s)]
+    ok = True
+    dropped = changed = 0
     for dirpath, _, files in os.walk(root):
         for name in files:
             path = os.path.join(dirpath, name)
-            if os.path.splitext(name)[1].lower() not in TEXT_EXT:
+            if any(fnmatch.fnmatch(name, pat) for pat in DROP):
+                if remove(path):
+                    dropped += 1
+                else:
+                    ok = False
+                continue
+            if os.path.splitext(name)[1].lower() in IMAGE_EXT or not needles:
                 continue
             try:
                 with open(path, "rb") as f:
                     raw = f.read()
-                text = raw.decode("utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            new = text
-            for n in needles:
-                new = new.replace(n, "***")
-            if new != text:
-                with open(path, "w", encoding="utf-8", newline="") as f:
-                    f.write(new)
-                changed += 1
-    print(f"redact: 已處理 {changed} 個檔案")
-    return 0
+                new = raw
+                for needle, mask in needles:
+                    new = new.replace(needle, mask)
+                if new != raw:
+                    with open(path, "wb") as f:
+                        f.write(new)
+                    changed += 1
+                if any(n in new for n in whole):
+                    raise ValueError("遮蔽後仍含完整帳密")
+            except (OSError, ValueError) as e:
+                print(f"redact: {path} 無法安全處理({e}),刪除", file=sys.stderr)
+                ok = remove(path) and ok
+    print(f"redact: 遮蔽 {changed} 個檔案,刪除 {dropped} 個原始記錄")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

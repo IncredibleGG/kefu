@@ -1,6 +1,6 @@
-# Android:收起鍵盤、截圖、按「登入」
+# Android:收起鍵盤、按「登入」
+# (不截「已填表單」:帳號框不是遮罩,公開 artifact 會看到 E2E_EMAIL)
 appId: cc.kf56k.kefu
 ---
 - hideKeyboard
-- takeScreenshot: 03-login-filled
 - tapOn: "登入"

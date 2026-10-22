@@ -7,7 +7,7 @@ CI 上每個平台各一個 job,**`continue-on-error: true`,不擋建置與發�
 |---|---|---|---|
 | Android | `android.yml` → `e2e-android` | [Maestro](https://maestro.dev) + `reactivecircus/android-emulator-runner`(API 34、x86_64) | `e2e-android` |
 | iOS | `ios.yml` → `e2e-ios` | Maestro + `macos-latest` 上的 iPhone 模擬器(最新 iOS runtime) | `e2e-ios` |
-| Windows | `desktop.yml` → `e2e-windows` | `tauri-driver` + 與 WebView2 同版的 `msedgedriver` + `selenium-webdriver` | `e2e-windows`(**目前受阻**,見下方「Windows 已知限制」) |
+| Windows | `desktop.yml` → `e2e-windows` | CI 另建的 E2E 專用版(App 自開 DevTools 埠 9222,不發佈)+ 與 WebView2 同版的 `msedgedriver` 附加 + `selenium-webdriver`(原因見下方「Windows 已知限制」) | `e2e-windows` |
 | macOS | — | **不支援**:WKWebView 沒有 WebDriver 實作(`tauri-driver` 只支援 Windows / Linux),只保留 `smoke-macos` 啟動截圖 | — |
 
 每個 job 都依賴同一個 workflow 的建置 job,安裝**剛建好的**產物(Android debug APK、iOS 模擬器版 `App.app`、Windows NSIS 安裝檔靜默安裝),
@@ -24,8 +24,17 @@ Repository secrets(**值不可寫進檔案或印到記錄**):
 | `E2E_PASSWORD` | 密碼 |
 
 沒有 `E2E_EMAIL` / `E2E_PASSWORD`(例如 fork 發的 PR)時 job 直接跳過。
-上傳 artifact 前 `e2e/scripts/redact.py` 會把所有文字記錄裡的帳號與密碼換成 `***`。
-注意「已填登入表單」截圖裡看得到帳號(密碼框是遮罩),所以 artifact 只保留 7 天;請只用專門的測試帳號。
+
+**repo 是公開的,artifact 任何登入 GitHub 的人都能下載。**上傳前 `e2e/scripts/redact.py`:
+
+- 刪除會逐字或拆段記下輸入內容的原始記錄(`msedgedriver*.log`、`xctest_runner*.log`、`device-xctest.log`、
+  `device-simulator.log`);`msedgedriver` 的記錄本來就寫在 runner 暫存目錄,不進 artifact。
+- 其餘非圖片檔以位元組處理,遮蔽帳號與密碼每一段長度 ≥ 一半(至少 4)的子字串(含 UTF-16、JSON、URL 編碼);
+  處理不了的檔案直接刪除。
+- 遮蔽步驟沒有成功跑完,upload 步驟就不執行。
+
+截圖不經遮蔽:不截「已填表單」;失敗時的截圖仍可能看到輸入中的帳號(密碼框是遮罩)。artifact 只保留 7 天,
+請只用專門的測試帳號。Android 的 E2E job 只還原模擬器快取、不存(登入後的 AVD 含 App 的登入 token)。
 
 ## 流程與截圖
 
@@ -33,13 +42,12 @@ Repository secrets(**值不可寫進檔案或印到記錄**):
 |---|---|
 | `01-setup.png` | 伺服器設定頁(網址框、「測試連線」/「繼續」) |
 | `02-login.png` | 登入頁(空白) |
-| `03-login-filled.png` | 登入頁已填帳密 |
 | `04-after-login.png` | 登入後第一個畫面(管理員 / 主管是「總覽」,坐席是「工作台」) |
 | `05-workspace.png` | 坐席工作台(會話清單分頁「我的 / 未分配 / 佇列 / 在線」)— **判定成功的畫面** |
 | `failure-*.png` / `failure-*.html` / `failure-hierarchy.json` | 失敗時的畫面與 DOM / 元件樹,用來調整選擇器 |
 
 Maestro 的截圖統一收進 artifact 的 `screenshots/`(只放最後一次嘗試的;每次嘗試的完整記錄在 `attempt-N/`)。
-模擬器偶發 `Device server died` 這類基礎設施問題時 `run.sh` 會自動重跑一次(`E2E_ATTEMPTS` 可調)。
+模擬器偶發 `Device server died` 這類基礎設施問題時 `run.sh` 會自動重跑(預設共 2 次,Android 3 次;`E2E_ATTEMPTS` 可調)。
 桌面版截圖直接放在 artifact 根目錄。
 
 ## 檔案
@@ -58,10 +66,11 @@ e2e/
 │       └── dismiss-alerts.yaml  # 系統權限詢問一律允許
 ├── desktop/
 │   ├── login.mjs                # selenium-webdriver,經 tauri-driver 驅動 kefu.exe(另有附加模式)
-│   ├── run-windows.ps1          # CI 入口:tauri-driver → 失敗時附加模式 → 再失敗跑對照組
+│   ├── run-windows.ps1          # CI 入口:有 KEFU_E2E_BUILTIN_PORT 時直接附加 E2E 專用版(模式 0);
+│   │                            #   否則 tauri-driver → 附加模式 → 對照組
 │   ├── webview2-probe.ps1       # 對照組:用官方 WebView2 SDK 開最小宿主,檢查覆寫參數是否生效
 │   └── package.json / package-lock.json
-└── scripts/redact.py            # 上傳前遮蔽帳密
+└── scripts/redact.py            # 上傳前遮蔽帳密、刪除原始驅動記錄(失敗則不上傳)
 ```
 
 選擇器以畫面文字為主(App 預設語系是繁體中文),點 `<label>` 聚焦對應輸入框;
@@ -91,8 +100,9 @@ e2e/
    (覆寫會取代整個 `windows` 陣列,需完整複製主視窗設定),再用 `run-windows.ps1` 的附加模式跑;或
 2. 在 App 原始碼加「只在特定環境變數存在時」才附加 `--remote-debugging-port` 的 opt-in(需改 `src-tauri`)。
 
-兩者都牽涉到產品建置或原始碼,尚未實作;等決定後再接上。`run-windows.ps1` 會先試標準的 tauri-driver 路徑,
-runtime 若恢復採用環境變數,這個 job 會直接通過。
+**目前採用做法 1**:`e2e-windows` 自己建一份 E2E 專用版(只在這個 job 裡用,不上傳、不發佈;正式安裝檔不受影響),
+設定 `KEFU_E2E_BUILTIN_PORT=9222`,`run-windows.ps1` 走模式 0 直接附加。沒有這個環境變數時腳本仍照舊先試
+tauri-driver,runtime 若恢復採用環境變數,標準路徑也能通過。
 
 ## 在本機跑
 

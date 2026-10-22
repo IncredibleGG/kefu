@@ -423,14 +423,16 @@ jobs:
             Select-Object FullName | Out-File (Join-Path $out 'webview-data-dir.txt') -Encoding utf8
           exit $rc
 
+      # 遮蔽沒有成功跑完就不上傳(repo 公開,artifact 任何人都能下載)
       - name: 遮蔽記錄裡的帳密
+        id: redact
         if: always() && steps.cfg.outputs.ok == 'true'
         env:
           PYTHONUTF8: '1'
         run: python e2e/scripts/redact.py e2e-out
 
       - uses: actions/upload-artifact@v7
-        if: always() && steps.cfg.outputs.ok == 'true'
+        if: always() && steps.redact.outcome == 'success'
         with:
           name: e2e-windows
           path: e2e-out/

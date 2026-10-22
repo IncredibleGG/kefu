@@ -131,7 +131,7 @@ async function main() {
     await shot(driver, "02-login");
     await typeInto(emailInput, email);
     await typeInto(pwInput, password);
-    await shot(driver, "03-login-filled");
+    // 不截「已填表單」:帳號框不是遮罩,公開 artifact 會看到 E2E_EMAIL
     await (await driver.findElement(By.css("form button[type='submit']"))).click();
 
     // ---------- 3. 登入後 ----------

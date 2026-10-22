@@ -300,10 +300,15 @@ jobs:
           if [ -n "${SIM_UDID:-}" ]; then
             xcrun simctl spawn "$SIM_UDID" log show --last 15m --style compact --predicate 'process == "App"' > "$out/system.log" 2>&1 || true
           fi
-          python3 e2e/scripts/redact.py e2e-out
+
+      # 遮蔽沒有成功跑完就不上傳(repo 公開,artifact 任何人都能下載)
+      - name: 遮蔽記錄裡的帳密
+        id: redact
+        if: always() && steps.cfg.outputs.ok == 'true'
+        run: python3 e2e/scripts/redact.py e2e-out
 
       - uses: actions/upload-artifact@v7
-        if: always() && steps.cfg.outputs.ok == 'true'
+        if: always() && steps.redact.outcome == 'success'
         with:
           name: e2e-ios
           path: e2e-out/

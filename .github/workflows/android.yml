@@ -297,13 +297,15 @@ jobs:
           # 剛開機的模擬器上系統程式(常見是 Pixel Launcher)容易 ANR,「isn't responding」框會蓋住 App
           # (曾兩次重跑都被擋)。關掉系統錯誤對話框:ANR 時系統改為直接重啟該程式,不再跳框
           adb shell settings put global hide_error_dialogs 1 || true
-          # 跑 e2e/maestro/login.yaml,失敗會重跑一次(模擬器偶發 Device server died);截圖收在 screenshots/
-          E2E_PLATFORM=android bash "$GITHUB_WORKSPACE/e2e/maestro/run.sh" "$out"
+          # 跑 e2e/maestro/login.yaml,失敗最多再跑兩次(模擬器偶發 Device server died、
+          # 打字時 driver 逾時之類的基礎設施問題);截圖收在 screenshots/
+          E2E_ATTEMPTS=3 E2E_PLATFORM=android bash "$GITHUB_WORKSPACE/e2e/maestro/run.sh" "$out"
           SH
 
-      # 快取模擬器系統映像與 AVD:runner 每次重新下載約 1GB 的系統映像,曾遇 Google 下載伺服器回損壞
-      # 檔案("Error on ZipFile unknown archive")而無法開機;命中快取時 sdkmanager 視為已安裝、不再下載
-      - uses: actions/cache@v6
+      # 與 smoke 共用模擬器快取,但這裡只還原、不存:登入後的 AVD 資料分割區含 App 的登入 token,
+      # 不可存進快取(同 key 的快取可被其他分支 / PR 的 workflow 還原)
+      - uses: actions/cache/restore@v6
+        if: steps.cfg.outputs.ok == 'true'
         with:
           path: |
             /usr/local/lib/android/sdk/system-images/android-34/google_apis/x86_64
@@ -322,12 +324,14 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot-save
           script: bash "${{ runner.temp }}/android-e2e.sh"
 
+      # 遮蔽沒有成功跑完就不上傳(repo 公開,artifact 任何人都能下載)
       - name: 遮蔽記錄裡的帳密
+        id: redact
         if: always() && steps.cfg.outputs.ok == 'true'
         run: python3 e2e/scripts/redact.py e2e-out
 
       - uses: actions/upload-artifact@v7
-        if: always() && steps.cfg.outputs.ok == 'true'
+        if: always() && steps.redact.outcome == 'success'
         with:
           name: e2e-android
           path: e2e-out/

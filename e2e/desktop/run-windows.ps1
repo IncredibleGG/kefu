@@ -21,6 +21,13 @@ $tauriDriver = if ($env:TAURI_DRIVER) { $env:TAURI_DRIVER } else { Join-Path $en
 
 function Note($msg) { "[$(Get-Date -Format o)] $msg" | Tee-Object -FilePath $testLog -Append }
 
+# msedgedriver 的記錄會逐字記下輸入的帳密(TypeElement 的 value 陣列、每個 Input.dispatchKeyEvent),
+# 不可放進會上傳成公開 artifact 的 $out;只留在 runner 的暫存目錄
+$driverLog = Join-Path ([System.IO.Path]::GetTempPath()) 'kefu-msedgedriver.log'
+function Start-EdgeDriver {
+  Start-Process -FilePath $env:MSEDGEDRIVER -ArgumentList '--port=9515', "--log-path=$driverLog" -PassThru
+}
+
 function Stop-Kefu {
   Get-Process kefu, msedgedriver -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Seconds 2
@@ -79,8 +86,7 @@ if ($env:KEFU_E2E_BUILTIN_PORT) {
     Stop-Kefu
     exit 1
   }
-  $ed = Start-Process -FilePath $env:MSEDGEDRIVER `
-    -ArgumentList '--port=9515', '--verbose', "--log-path=$(Join-Path $out 'msedgedriver.log')" -PassThru
+  $ed = Start-EdgeDriver
   Start-Sleep -Seconds 3
   $env:DEBUGGER_ADDRESS = "127.0.0.1:$port"
   $rc = Run-Login 'attach' 'http://127.0.0.1:9515/'
@@ -136,8 +142,7 @@ if (-not $attached) {
   exit 1
 }
 
-$ed = Start-Process -FilePath $env:MSEDGEDRIVER `
-  -ArgumentList '--port=9515', '--verbose', "--log-path=$(Join-Path $out 'msedgedriver.log')" -PassThru
+$ed = Start-EdgeDriver
 Start-Sleep -Seconds 3
 $env:DEBUGGER_ADDRESS = "127.0.0.1:$port"
 $rc = Run-Login 'attach' 'http://127.0.0.1:9515/'
