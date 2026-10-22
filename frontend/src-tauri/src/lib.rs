@@ -129,7 +129,8 @@ fn fit_main_window_to_screen(app: &AppHandle) {
     let area = monitor.work_area();
     let area_size = (area.size.width, area.size.height);
     if let Some((width, height)) = fitted_size((outer.width, outer.height), area_size) {
-        // set_size 設的是內容區(inner):扣掉標題列 / 邊框,讓外框正好是 (width, height)
+        // set_size 設的是內容區(inner):扣掉標題列 / 邊框,讓外框正好是 (width, height)。
+        // macOS 的 Tauri 預設標題列樣式開了 NSFullSizeContentView,內容區涵蓋標題列,這時 decor 為 0
         let decor_w = outer.width.saturating_sub(inner.width);
         let decor_h = outer.height.saturating_sub(inner.height);
         let _ = window.set_size(tauri::PhysicalSize::new(
