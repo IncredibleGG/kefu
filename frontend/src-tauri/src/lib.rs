@@ -99,6 +99,13 @@ fn fitted_size(outer: (u32, u32), area: (u32, u32)) -> Option<(u32, u32)> {
     Some((ow.min(aw * 9 / 10), oh.min(ah * 9 / 10)))
 }
 
+/// 視窗外框 `size` 在螢幕可用區域內置中時的左上角座標(實體像素)。
+fn centered_origin(area_pos: (i32, i32), area: (u32, u32), size: (u32, u32)) -> (i32, i32) {
+    let dx = area.0.saturating_sub(size.0) / 2;
+    let dy = area.1.saturating_sub(size.1) / 2;
+    (area_pos.0 + dx as i32, area_pos.1 + dy as i32)
+}
+
 /// 小螢幕防溢出:主視窗(預設 1280×800,或 window-state 還原的尺寸)比所在螢幕的可用區域
 /// (扣除工作列 / Dock / 選單列)大時縮小並置中。例如 1366×768 的 Windows 筆電扣掉工作列
 /// 只剩約 728px 高,不縮的話視窗下緣會超出螢幕。須在視窗顯示前呼叫。
@@ -112,13 +119,23 @@ fn fit_main_window_to_screen(app: &AppHandle) {
         .ok()
         .flatten()
         .or_else(|| window.primary_monitor().ok().flatten());
-    let (Some(monitor), Ok(outer)) = (monitor, window.outer_size()) else {
+    let (Some(monitor), Ok(outer), Ok(inner)) = (monitor, window.outer_size(), window.inner_size()) else {
         return;
     };
-    let area = monitor.work_area().size;
-    if let Some((width, height)) = fitted_size((outer.width, outer.height), (area.width, area.height)) {
-        let _ = window.set_size(tauri::PhysicalSize::new(width, height));
-        let _ = window.center();
+    let area = monitor.work_area();
+    let area_size = (area.size.width, area.size.height);
+    if let Some((width, height)) = fitted_size((outer.width, outer.height), area_size) {
+        // set_size 設的是內容區(inner):扣掉標題列 / 邊框,讓外框正好是 (width, height)
+        let decor_w = outer.width.saturating_sub(inner.width);
+        let decor_h = outer.height.saturating_sub(inner.height);
+        let _ = window.set_size(tauri::PhysicalSize::new(
+            width.saturating_sub(decor_w),
+            height.saturating_sub(decor_h),
+        ));
+        // 自行計算置中座標,不用 center():macOS 的 set_size 是非同步的,緊接著 center()
+        // 會拿舊尺寸計算(實測 1280 寬的視窗在 1024 寬螢幕上左緣落在 -128)
+        let (x, y) = centered_origin((area.position.x, area.position.y), area_size, (width, height));
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
     }
 }
 
@@ -332,7 +349,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{fitted_size, tray_tooltip};
+    use super::{centered_origin, fitted_size, tray_tooltip};
 
     #[test]
     fn tooltip_shows_unread_count() {
@@ -356,5 +373,15 @@ mod tests {
     #[test]
     fn unknown_work_area_is_ignored() {
         assert_eq!(fitted_size((1280, 800), (0, 0)), None);
+    }
+
+    #[test]
+    fn window_centered_in_work_area() {
+        // macOS:選單列下方 25px 起算的可用區域
+        assert_eq!(centered_origin((0, 25), (1024, 743), (921, 668)), (51, 62));
+        // 副螢幕在主螢幕右側(可用區域原點非 0)
+        assert_eq!(centered_origin((1920, 0), (1366, 728), (1229, 655)), (1988, 36));
+        // 視窗比可用區域大時貼齊原點,不出現負座標
+        assert_eq!(centered_origin((0, 0), (800, 600), (1280, 800)), (0, 0));
     }
 }
