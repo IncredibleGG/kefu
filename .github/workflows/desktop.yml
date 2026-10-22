@@ -172,14 +172,28 @@ jobs:
             printf '{"main":{"width":%s,"height":%s,"x":%s,"y":%s,"prev_x":%s,"prev_y":%s,"maximized":false,"visible":true,"decorated":true,"fullscreen":false}}' \
               "$1" "$2" "$3" "$4" "$3" "$4" > "$state_dir/.window-state.json"
           }
+          # 印出 kefu 主視窗外框與主螢幕可用區域(扣掉選單列與 Dock),座標原點在主螢幕左上角:
+          # "x y w h 可用區x 可用區y 可用區w 可用區h"
           cat > "$RUNNER_TEMP/bounds.swift" <<'SWIFT'
-          import CoreGraphics
+          import AppKit
+          let screen = NSScreen.screens[0]
+          let vf = screen.visibleFrame
+          let vTop = screen.frame.height - (vf.origin.y + vf.height)
           let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
           for w in list where (w[kCGWindowOwnerName as String] as? String) == "kefu" && (w[kCGWindowLayer as String] as? Int) == 0 {
-            print(w[kCGWindowBounds as String] ?? "?")
+            if let d = w[kCGWindowBounds as String], let r = CGRect(dictionaryRepresentation: d as! CFDictionary) {
+              print(Int(r.minX), Int(r.minY), Int(r.width), Int(r.height), Int(vf.minX), Int(vTop), Int(vf.width), Int(vf.height))
+            }
           }
           SWIFT
-          bounds() { echo "$1: $(swift "$RUNNER_TEMP/bounds.swift" 2>&1 | tr '\n' ' ')" | tee -a "$out/window.txt"; }
+          failed=0
+          fail() { echo "::error title=smoke-macos::$1" | tee -a "$out/window.txt"; failed=1; }
+          bounds() {
+            local v
+            v=$(swift "$RUNNER_TEMP/bounds.swift" 2>>"$out/swift.err" | head -n 1 || true)
+            echo "$1: ${v:-(量不到視窗)}" | tee -a "$out/window.txt"
+            read -r x y w h vx vy vw vh <<< "${v:-}" || true
+          }
           system_profiler SPDisplaysDataType > "$out/display.txt" 2>&1 || true
 
           seed 3000 2000 0 25
@@ -187,6 +201,13 @@ jobs:
           sleep 20
           screencapture -x "$out/macos.png"
           bounds "上次 3000×2000(應縮放置中)"
+          if [ -z "${vh:-}" ]; then
+            fail "情境 1 量不到視窗位置(見 swift.err)"
+          elif [ "$x" -lt "$vx" ] || [ "$y" -lt "$vy" ] || [ $((x + w)) -gt $((vx + vw)) ] || [ $((y + h)) -gt $((vy + vh)) ]; then
+            fail "情境 1 視窗超出可用區域:$x,$y ${w}x$h,可用區域 $vx,$vy ${vw}x$vh"
+          elif [ $(( (x - vx) - (vx + vw - x - w) )) -gt 2 ] || [ $(( (vx + vw - x - w) - (x - vx) )) -gt 2 ]; then
+            fail "情境 1 視窗沒有水平置中:$x,$y ${w}x$h"
+          fi
           if ! pgrep -fl "$app/Contents/MacOS/" > "$out/processes-large.txt"; then
             echo "情境 1 找不到 App 行程(可能已閃退)" | tee "$out/processes-large.txt"
             exit 1
@@ -199,12 +220,18 @@ jobs:
           sleep 15
           screencapture -x "$out/macos-small.png"
           bounds "上次 900×560 於 (40,60)(應原樣保留)"
+          if [ -z "${vh:-}" ]; then
+            fail "情境 2 量不到視窗位置(見 swift.err)"
+          elif [ "$x" -ne 40 ] || [ "$y" -ne 60 ] || [ "$w" -ne 900 ]; then
+            fail "情境 2 使用者存的位置 / 寬度被改掉:$x,$y ${w}x$h(應為 40,60 寬 900)"
+          fi
           log show --last 3m --style compact --predicate 'process == "kefu"' > "$out/system.log" 2>&1 || true
           ls -la ~/Library/Logs/DiagnosticReports > "$out/crash-reports.txt" 2>&1 || true
           if ! pgrep -fl "$app/Contents/MacOS/" > "$out/processes.txt"; then
             echo "找不到 App 行程(可能已閃退)" | tee "$out/processes.txt"
             exit 1
           fi
+          exit "$failed"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -249,11 +276,12 @@ jobs:
           "exe: $exe" | Tee-Object -FilePath (Join-Path $out 'install.log') -Append
           # window-state 還原情境:上次在大螢幕上最大化(一般尺寸 1800×1000)→ 這台小螢幕上仍要最大化
           # (縮放 / 置中會把最大化取消,所以已最大化時不可再縮);使用者再按「還原」時,
-          # 一般尺寸比螢幕大 → 要縮進可用區域。結果記在 window.txt
+          # 視窗的可見範圍要在可用區域內(Windows 會把還原後的位置放在可用區域)。結果記在 window.txt
           $stateDir = Join-Path $env:APPDATA 'cc.kf56k.kefu'
           New-Item -ItemType Directory -Force $stateDir | Out-Null
           '{"main":{"width":1800,"height":1000,"x":-8,"y":-8,"prev_x":60,"prev_y":40,"maximized":true,"visible":true,"decorated":true,"fullscreen":false}}' |
             Set-Content -Path (Join-Path $stateDir '.window-state.json') -Encoding ascii -NoNewline
+          $problems = @()
           $app = Start-Process -FilePath $exe -PassThru `
             -RedirectStandardOutput (Join-Path $out 'stdout.log') `
             -RedirectStandardError (Join-Path $out 'stderr.log')
@@ -282,25 +310,42 @@ jobs:
           [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
           '@
             $hwnd = $app.MainWindowHandle
-            function Get-WindowState([string]$label) {
+            $wa = [System.Windows.Forms.Screen]::FromHandle($hwnd).WorkingArea
+            function Get-WindowState {
               $rect = New-Object KefuSmoke.Win32+RECT
               [void][KefuSmoke.Win32]::GetWindowRect($hwnd, [ref]$rect)
-              "${label}: hwnd=$hwnd maximized=$([KefuSmoke.Win32]::IsZoomed($hwnd)) " +
-                "rect=($($rect.Left),$($rect.Top))-($($rect.Right),$($rect.Bottom))"
+              [pscustomobject]@{ Zoomed = [KefuSmoke.Win32]::IsZoomed($hwnd); Rect = $rect }
             }
-            $msg = @(Get-WindowState '上次最大化(應仍最大化)')
+            function Format-WindowState($label, $st) {
+              "${label}: maximized=$($st.Zoomed) rect=($($st.Rect.Left),$($st.Rect.Top))-($($st.Rect.Right),$($st.Rect.Bottom))" +
+                " 可用區域=($($wa.Left),$($wa.Top))-($($wa.Right),$($wa.Bottom))"
+            }
+            $before = Get-WindowState
             [void][KefuSmoke.Win32]::ShowWindow($hwnd, 9)   # SW_RESTORE:使用者按「還原」
             Start-Sleep -Seconds 3
-            $msg += Get-WindowState '按還原後(應縮進可用區域、置中)'
+            $after = Get-WindowState
             Save-Screen 'windows-restored.png'
+            $msg = @(
+              (Format-WindowState '上次最大化(應仍最大化)' $before),
+              (Format-WindowState '按還原後(可見範圍應在可用區域內)' $after)
+            )
+            if (-not $before.Zoomed) { $problems += '上次是最大化,啟動後卻不是最大化' }
+            # GetWindowRect 含 Windows 看不見的縮放邊框(約 8px),所以容許超出 8px
+            $r = $after.Rect
+            if ($after.Zoomed -or $r.Left -lt $wa.Left - 8 -or $r.Top -lt $wa.Top - 8 -or
+                $r.Right -gt $wa.Right + 8 -or $r.Bottom -gt $wa.Bottom + 8) {
+              $problems += '按還原後視窗超出可用區域(或仍是最大化)'
+            }
           } catch {
             $msg = "視窗狀態檢查失敗:$_"
+            $problems += $msg
           }
           $msg | Tee-Object -FilePath (Join-Path $out 'window.txt')
           Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Level = 1, 2; StartTime = (Get-Date).AddMinutes(-10) } -ErrorAction SilentlyContinue |
             Format-List TimeCreated, ProviderName, Id, Message | Out-File (Join-Path $out 'application-errors.txt')
           if ($app.HasExited) { throw "kefu.exe 已結束(exit=$($app.ExitCode)),可能啟動失敗" }
           Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+          if ($problems) { throw ($problems -join ';') }
       - uses: actions/upload-artifact@v7
         if: always()
         with:
