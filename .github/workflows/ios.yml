@@ -288,8 +288,9 @@ jobs:
           set -uo pipefail
           out="$GITHUB_WORKSPACE/e2e-out"
           maestro --version | tee "$out/maestro-version.txt"
-          # 跑 e2e/maestro/login.yaml,失敗會重跑一次;截圖收在 screenshots/
-          E2E_PLATFORM=ios bash "$GITHUB_WORKSPACE/e2e/maestro/run.sh" "$out" --device "$SIM_UDID"
+          # 跑 e2e/maestro/login.yaml,失敗最多再跑兩次(模擬器上鍵盤彈出時偶爾點錯欄位這類不穩);
+          # 截圖收在 screenshots/
+          E2E_ATTEMPTS=3 E2E_PLATFORM=ios bash "$GITHUB_WORKSPACE/e2e/maestro/run.sh" "$out" --device "$SIM_UDID"
 
       - name: 收集截圖與記錄
         if: always() && steps.cfg.outputs.ok == 'true'

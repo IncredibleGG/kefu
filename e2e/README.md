@@ -47,7 +47,7 @@ Repository secrets(**值不可寫進檔案或印到記錄**):
 | `failure-*.png` / `failure-*.html` / `failure-hierarchy.json` | 失敗時的畫面與 DOM / 元件樹,用來調整選擇器 |
 
 Maestro 的截圖統一收進 artifact 的 `screenshots/`(只放最後一次嘗試的;每次嘗試的完整記錄在 `attempt-N/`)。
-模擬器偶發 `Device server died` 這類基礎設施問題時 `run.sh` 會自動重跑(預設共 2 次,Android 3 次;`E2E_ATTEMPTS` 可調)。
+模擬器偶發 `Device server died` 這類基礎設施問題時 `run.sh` 會自動重跑(預設共 2 次,CI 上 Android / iOS 各 3 次;`E2E_ATTEMPTS` 可調)。
 桌面版截圖直接放在 artifact 根目錄。
 
 ## 檔案
@@ -60,7 +60,7 @@ e2e/
 │   ├── common/set-server.yaml   # E2E_SERVER 與預填值不同時改網址
 │   ├── android/
 │   │   ├── submit-login.yaml    # 收鍵盤 + 點「登入」
-│   │   └── dismiss-anr.yaml     # 模擬器系統程式 ANR 框蓋住 App 時按「Close app」
+│   │   └── wait-setup.yaml      # 等設定頁:關掉模擬器系統程式的 ANR 框;App 行程被系統誤殺時重啟
 │   └── ios/
 │       ├── submit-login.yaml    # 密碼框按 Enter 送出(WKWebView 收鍵盤不穩)
 │       └── dismiss-alerts.yaml  # 系統權限詢問一律允許

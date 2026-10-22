@@ -28,6 +28,19 @@ function Start-EdgeDriver {
   Start-Process -FilePath $env:MSEDGEDRIVER -ArgumentList '--port=9515', "--log-path=$driverLog" -PassThru
 }
 
+# 固定等幾秒不夠:runner 忙時 msedgedriver 曾超過 3 秒才開始監聽(登入腳本連線被拒)
+function Wait-EdgeDriver {
+  for ($i = 0; $i -lt 60; $i++) {
+    try {
+      Invoke-RestMethod -Uri 'http://127.0.0.1:9515/status' -TimeoutSec 2 -ErrorAction Stop | Out-Null
+      return $true
+    } catch {
+      Start-Sleep -Milliseconds 500
+    }
+  }
+  return $false
+}
+
 function Stop-Kefu {
   Get-Process kefu, msedgedriver -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Seconds 2
@@ -87,7 +100,7 @@ if ($env:KEFU_E2E_BUILTIN_PORT) {
     exit 1
   }
   $ed = Start-EdgeDriver
-  Start-Sleep -Seconds 3
+  if (-not (Wait-EdgeDriver)) { Note "msedgedriver 30 秒內沒有開始監聽 9515" }
   $env:DEBUGGER_ADDRESS = "127.0.0.1:$port"
   $rc = Run-Login 'attach' 'http://127.0.0.1:9515/'
   Note "結果:模式 0 exit=$rc"
@@ -143,7 +156,7 @@ if (-not $attached) {
 }
 
 $ed = Start-EdgeDriver
-Start-Sleep -Seconds 3
+if (-not (Wait-EdgeDriver)) { Note "msedgedriver 30 秒內沒有開始監聽 9515" }
 $env:DEBUGGER_ADDRESS = "127.0.0.1:$port"
 $rc = Run-Login 'attach' 'http://127.0.0.1:9515/'
 Note "結果:附加模式 exit=$rc"

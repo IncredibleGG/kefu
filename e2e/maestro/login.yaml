@@ -15,7 +15,7 @@ name: kefu-login
 - runFlow:
     when:
       platform: Android
-    file: android/dismiss-anr.yaml
+    file: android/wait-setup.yaml
 - extendedWaitUntil:
     visible: "測試連線"
     timeout: 90000
