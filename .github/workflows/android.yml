@@ -286,9 +286,25 @@ jobs:
           pkg="cc.kf56k.kefu"
           apk="$GITHUB_WORKSPACE/pkg/kefu-android-debug.apk"
           collect() {
-            adb logcat -d > "$out/logcat.txt" 2>&1 || true
+            # Maestro 的 driver 打每個字前會記一行字元碼(tag Maestro),不收(redact.py 另有整行刪除)
+            adb logcat -d '*:V' 'Maestro:S' > "$out/logcat.txt" 2>&1 || true
             adb logcat -d -s chromium:V Capacitor:V Capacitor/Console:V AndroidRuntime:E > "$out/logcat-app.txt" 2>&1 || true
+            adb logcat -d -b crash > "$out/logcat-crash.txt" 2>&1 || true
             cp -R "$HOME/.maestro/tests" "$out/maestro-tests" 2>/dev/null || true
+            # wait-setup.yaml 會在畫面空白時重啟 App 讓流程繼續;重啟與 kefu 自己的閃退 / ANR 要看得見
+            for f in "$out"/attempt-*/maestro-output/*/*/commands.json; do
+              [ -f "$f" ] || continue
+              n=$(grep -o '"launchAppCommand"' "$f" | wc -l)
+              if [ "$n" -gt 1 ]; then
+                echo "::warning title=e2e-android::${f#$out/}:App 被重新啟動 $((n - 1)) 次(wait-setup.yaml)"
+              fi
+            done
+            if grep -q "$pkg" "$out/logcat-crash.txt"; then
+              echo "::warning title=e2e-android::kefu 有閃退記錄,見 artifact 的 logcat-crash.txt"
+            fi
+            if grep -q "ANR in $pkg" "$out/logcat.txt"; then
+              echo "::warning title=e2e-android::kefu 發生 ANR,見 artifact 的 logcat.txt"
+            fi
           }
           trap collect EXIT
           adb install -r -g "$apk" 2>&1 | tee "$out/install.log"

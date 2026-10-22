@@ -44,6 +44,16 @@ async function snapshot(driver, name) {
   }
 }
 
+/** 清空帳號 / 密碼框(含 React 同步到 value 屬性的值):打過帳密後的失敗截圖與 DOM 才不會帶出帳密 */
+async function clearCredentials(driver) {
+  await driver.executeScript(`
+    for (const el of document.querySelectorAll("input[type='email'], input[type='password'], #email, #password")) {
+      el.value = "";
+      el.removeAttribute("value");
+    }
+  `);
+}
+
 /** 等待元素出現且可見 */
 async function visible(driver, css, timeout) {
   const el = await driver.wait(until.elementLocated(By.css(css)), timeout, `等不到 ${css}`);
@@ -110,6 +120,7 @@ async function main() {
   log("啟動", exe, "via", webdriverUrl);
   const driver = await new Builder().withCapabilities(caps).usingServer(webdriverUrl).build();
   let step = "init";
+  let typed = false; // 已開始輸入帳密
   await hookConsole(driver);
   try {
     // ---------- 1. 伺服器設定頁 ----------
@@ -129,6 +140,7 @@ async function main() {
     const pwInput = await visible(driver, "input#password[type='password']", 10_000);
     await hookConsole(driver); // 伺服器設定送出後若頁面重新載入,鉤子會消失,補掛一次
     await shot(driver, "02-login");
+    typed = true;
     await typeInto(emailInput, email);
     await typeInto(pwInput, password);
     // 不截「已填表單」:帳號框不是遮罩,公開 artifact 會看到 E2E_EMAIL
@@ -178,8 +190,20 @@ async function main() {
     log("完成");
   } catch (e) {
     log(`失敗(${step}):`, e.message);
-    await shot(driver, `failure-${step}`).catch(() => undefined);
-    await snapshot(driver, `failure-${step}`);
+    // artifact 公開:打過帳密之後,清不掉登入框就不截圖、不存 DOM
+    const capture =
+      !typed ||
+      (await clearCredentials(driver).then(
+        () => true,
+        (err) => {
+          log("無法清空登入框,略過失敗截圖與 DOM:", err.message);
+          return false;
+        },
+      ));
+    if (capture) {
+      await shot(driver, `failure-${step}`).catch(() => undefined);
+      await snapshot(driver, `failure-${step}`);
+    }
     await writeFile(path.join(out, "result.json"), JSON.stringify({ ok: false, step, error: e.message }, null, 2));
     process.exitCode = 1;
   } finally {

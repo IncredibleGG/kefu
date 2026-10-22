@@ -6,12 +6,18 @@
 
 - 驅動程式 / 裝置的原始記錄(msedgedriver、XCTest、模擬器)會逐字或拆段記下輸入內容
   (例如 iOS 先打第一個字再打其餘),遮蔽無法保證完整 → 直接刪除。
+- Maestro 的 Android driver 打每個字前會在 logcat 記一行字元碼(`D Maestro : 97`)→ 這類行整行刪除。
 - 其餘非圖片檔一律以位元組處理,不因編碼問題略過:遮蔽帳密每一段長度 ≥ 一半(至少 4)的子字串,
-  涵蓋 UTF-8、UTF-16LE、JSON 跳脫、URL 編碼,所以輸入到一半或拆段記錄的片段也會被遮。
+  涵蓋 UTF-8、UTF-16LE、JSON 跳脫、URL 編碼、HTML 跳脫,所以輸入到一半或拆段記錄的片段也會被遮。
 - 登入後的 session token(JWT)也一併遮蔽:debug 版 Capacitor 會把外掛呼叫的資料(含存 token)印進 logcat。
-- 讀寫失敗的檔案刪除;刪不掉就以非 0 結束。遮完再掃一次,仍找得到完整帳密的檔案也刪除。
-- 截圖(png / jpg)不處理:密碼框本來就是遮罩;失敗截圖可能看得到輸入中的 email。
+- 讀寫失敗的檔案刪除;刪不掉就以非 0 結束。遮完再掃一次,仍找得到完整帳密或 token 的檔案也刪除。
+- 截圖無法遮蔽,改為刪除可能拍到帳密的:Maestro 某次嘗試(attempt-N/)已開始輸入帳密
+  (commands.json 有 inputText,或沒有 commands.json)時,只留 01、02(輸入前)與 04、05(登入後)
+  這四張指定截圖,失敗截圖等一律刪除;~/.maestro/tests 的副本(maestro-tests/)裡的截圖也刪除。
+  桌面版由 login.mjs 在失敗截圖前先清空登入框。
 """
+from __future__ import annotations
+
 import fnmatch
 import html
 import json
@@ -22,7 +28,11 @@ import urllib.parse
 
 IMAGE_EXT = {".png", ".jpg", ".jpeg"}
 DROP = ["msedgedriver*.log", "xctest_runner*.log", "device-xctest.log", "device-simulator.log"]
+KEEP_SHOTS = ("01-", "02-", "04-", "05-")
+ATTEMPT_DIR = re.compile(r"^attempt-\d+$")
 MASK = "***"
+# 「D Maestro : 112」「D/Maestro( 123): 112」這類逐字字元碼記錄(整行刪除)
+MAESTRO_KEYCODE_LINE = re.compile(rb"(?m)^[^\n]*\bMaestro\b[^\n:]*:[ \t]*\d{1,5}[ \t]*\r?(?:\n|\Z)")
 # JWT(eyJ 開頭、三段 base64url)的 UTF-8 與 UTF-16LE(每個字元後接 \x00)位元組樣式
 _SEG8 = rb"[A-Za-z0-9_\-]{8,}"
 _SEG16 = rb"(?:[A-Za-z0-9_\-]\x00){8,}"
@@ -41,6 +51,14 @@ def pieces(secret: str) -> set[str]:
     return {secret[i:j] for i in range(len(secret)) for j in range(i + m, len(secret) + 1)}
 
 
+def browser_escape(text: str, attribute: bool) -> str:
+    """瀏覽器序列化 DOM(getPageSource)的跳脫方式:屬性值跳脫 & nbsp ",文字節點跳脫 & nbsp < >。"""
+    out = text.replace("&", "&amp;").replace("\xa0", "&nbsp;")
+    if attribute:
+        return out.replace('"', "&quot;")
+    return out.replace("<", "&lt;").replace(">", "&gt;")
+
+
 def encoded(text: str) -> set[tuple[bytes, bytes]]:
     forms = {
         text,
@@ -51,6 +69,8 @@ def encoded(text: str) -> set[tuple[bytes, bytes]]:
         # 失敗時的頁面原始碼(failure-*.html):受控 input 的 value 屬性是 HTML 跳脫過的
         html.escape(text, quote=True),
         html.escape(text, quote=False),
+        browser_escape(text, attribute=True),
+        browser_escape(text, attribute=False),
     }
     out = set()
     for f in forms:
@@ -69,13 +89,44 @@ def remove(path: str) -> bool:
         return False
 
 
+def attempt_of(root: str, path: str) -> str | None:
+    """path 所屬的 Maestro 嘗試目錄(root 底下第一個 attempt-N),不在任何嘗試目錄裡時回 None。"""
+    parts = os.path.relpath(path, root).split(os.sep)
+    for i, part in enumerate(parts[:-1]):
+        if ATTEMPT_DIR.match(part):
+            return os.path.join(root, *parts[: i + 1])
+    return None
+
+
+def typed_attempts(root: str) -> set[str]:
+    """已開始輸入帳密的嘗試目錄:有 inputText 指令,或沒有 commands.json(無法判斷時當作已輸入)。"""
+    attempts, with_commands, typed = set(), set(), set()
+    for dirpath, dirs, files in os.walk(root):
+        if ATTEMPT_DIR.match(os.path.basename(dirpath)) and attempt_of(root, os.path.join(dirpath, "x")) == dirpath:
+            attempts.add(dirpath)
+        if "commands.json" in files:
+            path = os.path.join(dirpath, "commands.json")
+            attempt = attempt_of(root, path)
+            if attempt is None:
+                continue
+            with_commands.add(attempt)
+            try:
+                with open(path, "rb") as f:
+                    if b"inputTextCommand" in f.read():
+                        typed.add(attempt)
+            except OSError:
+                typed.add(attempt)
+    return typed | (attempts - with_commands)
+
+
 def main() -> int:
     root = sys.argv[1] if len(sys.argv) > 1 else "."
     secrets = [s for s in (os.environ.get(k, "") for k in ("E2E_PASSWORD", "E2E_EMAIL")) if len(s) >= 3]
     needles = sorted({pair for s in secrets for p in pieces(s) for pair in encoded(p)}, key=lambda p: -len(p[0]))
     whole = [n for s in secrets for n, _ in encoded(s)]
+    typed = typed_attempts(root)
     ok = True
-    dropped = changed = 0
+    dropped = changed = shots = 0
     for dirpath, _, files in os.walk(root):
         for name in files:
             path = os.path.join(dirpath, name)
@@ -86,11 +137,17 @@ def main() -> int:
                     ok = False
                 continue
             if os.path.splitext(name)[1].lower() in IMAGE_EXT:
+                in_copy = "maestro-tests" in os.path.relpath(path, root).split(os.sep)
+                if in_copy or (attempt_of(root, path) in typed and not name.startswith(KEEP_SHOTS)):
+                    if remove(path):
+                        shots += 1
+                    else:
+                        ok = False
                 continue
             try:
                 with open(path, "rb") as f:
                     raw = f.read()
-                new = raw
+                new = MAESTRO_KEYCODE_LINE.sub(b"", raw)
                 for pattern, mask in JWT_PATTERNS:
                     new = pattern.sub(mask, new)
                 for needle, mask in needles:
@@ -99,14 +156,19 @@ def main() -> int:
                     with open(path, "wb") as f:
                         f.write(new)
                     changed += 1
-                if any(n in new for n in whole) or any(p.search(new) for p, _ in JWT_PATTERNS):
-                    raise ValueError("遮蔽後仍含完整帳密或 token")
+                leaked = (
+                    any(n in new for n in whole)
+                    or any(p.search(new) for p, _ in JWT_PATTERNS)
+                    or MAESTRO_KEYCODE_LINE.search(new)
+                )
+                if leaked:
+                    raise ValueError("遮蔽後仍含帳密或 token")
             except (OSError, ValueError) as e:
                 print(f"redact: {path} 無法安全處理({e}),刪除", file=sys.stderr)
                 ok = remove(path) and ok
     if not secrets:
-        print("redact: 沒有 E2E_EMAIL / E2E_PASSWORD,只遮蔽 token")
-    print(f"redact: 遮蔽 {changed} 個檔案,刪除 {dropped} 個原始記錄")
+        print("redact: 沒有 E2E_EMAIL / E2E_PASSWORD,只遮蔽 token 與逐字記錄")
+    print(f"redact: 遮蔽 {changed} 個檔案,刪除 {dropped} 個原始記錄、{shots} 張可能拍到帳密的截圖")
     return 0 if ok else 1
 
 

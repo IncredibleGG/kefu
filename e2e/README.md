@@ -29,12 +29,17 @@ Repository secrets(**值不可寫進檔案或印到記錄**):
 
 - 刪除會逐字或拆段記下輸入內容的原始記錄(`msedgedriver*.log`、`xctest_runner*.log`、`device-xctest.log`、
   `device-simulator.log`);`msedgedriver` 的記錄本來就寫在 runner 暫存目錄,不進 artifact。
-- 其餘非圖片檔以位元組處理,遮蔽帳號與密碼每一段長度 ≥ 一半(至少 4)的子字串(含 UTF-16、JSON、URL 編碼);
+- Maestro 的 Android driver 每打一個字會在 logcat 記一行字元碼(`D Maestro : 97`):收 logcat 時就排除
+  `Maestro` tag,redact.py 再把這類行整行刪除。
+- 其餘非圖片檔以位元組處理,遮蔽帳號與密碼每一段長度 ≥ 一半(至少 4)的子字串(含 UTF-16、JSON、URL、
+  HTML 跳脫),以及登入後的 session token(JWT;debug 版 Capacitor 會把存 token 的呼叫印進 logcat);
   處理不了的檔案直接刪除。
+- 截圖無法遮蔽:不截「已填表單」;Maestro 的嘗試只要開始輸入帳密,就只留 01、02、04、05 四張指定截圖,
+  失敗截圖一律刪除(看 `failure-hierarchy.json` 與記錄除錯);桌面版失敗時先清空登入框再截圖。
 - 遮蔽步驟沒有成功跑完,upload 步驟就不執行。
 
-截圖不經遮蔽:不截「已填表單」;失敗時的截圖仍可能看到輸入中的帳號(密碼框是遮罩)。artifact 只保留 7 天,
-請只用專門的測試帳號。Android 的 E2E job 只還原模擬器快取、不存(登入後的 AVD 含 App 的登入 token)。
+artifact 只保留 7 天,請只用專門的測試帳號。Android 的 E2E job 只還原模擬器快取、不存(登入後的 AVD 含 App 的
+登入 token)。Android 若因畫面空白重啟 App、或 App 有閃退 / ANR 記錄,job 會標 warning(`logcat-crash.txt`)。
 
 ## 流程與截圖
 
@@ -44,7 +49,7 @@ Repository secrets(**值不可寫進檔案或印到記錄**):
 | `02-login.png` | 登入頁(空白) |
 | `04-after-login.png` | 登入後第一個畫面(管理員 / 主管是「總覽」,坐席是「工作台」) |
 | `05-workspace.png` | 坐席工作台(會話清單分頁「我的 / 未分配 / 佇列 / 在線」)— **判定成功的畫面** |
-| `failure-*.png` / `failure-*.html` / `failure-hierarchy.json` | 失敗時的畫面與 DOM / 元件樹,用來調整選擇器 |
+| `failure-*.png` / `failure-*.html` / `failure-hierarchy.json` | 失敗時的畫面與 DOM / 元件樹,用來調整選擇器(行動版開始輸入帳密後的失敗截圖會在上傳前刪除) |
 
 Maestro 的截圖統一收進 artifact 的 `screenshots/`(只放最後一次嘗試的;每次嘗試的完整記錄在 `attempt-N/`)。
 模擬器偶發 `Device server died` 這類基礎設施問題時 `run.sh` 會自動重跑(預設共 2 次,CI 上 Android / iOS 各 3 次;`E2E_ATTEMPTS` 可調)。
