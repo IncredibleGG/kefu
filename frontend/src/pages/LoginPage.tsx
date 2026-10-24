@@ -60,10 +60,11 @@ export function LoginPage() {
   // 白牌:命中租戶網域時,登入頁改用該租戶 logo 與名稱
   const branded = brand.ready && !brand.isDefault;
   const brandName = branded && brand.name ? brand.name : t("login.title");
-  // 僅在 mock 模式(mockMode !== "off")預填 demo 帳密;正式(mock=off)一律留空
-  const demoPrefill = config.mockMode !== "off";
+  // 只在純前端展示(VITE_MOCK=on)預填 demo 帳號:mock 登入不驗密碼,其餘模式一律留空。
+  // repo 是公開的,不要在這裡放真的 demo 密碼
+  const demoPrefill = config.mockMode === "on";
   const [email, setEmail] = useState(demoPrefill ? "admin@demo.local" : "");
-  const [password, setPassword] = useState(demoPrefill ? "admin12345" : "");
+  const [password, setPassword] = useState(demoPrefill ? "demo" : "");
   // 多租戶:選填工作區 slug(進階,預設收合);同一帳密對到多個工作區時後端回清單讓使用者選
   const [tenant, setTenant] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
