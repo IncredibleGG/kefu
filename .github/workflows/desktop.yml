@@ -169,7 +169,10 @@ jobs:
           # window-state 還原情境(預先寫入上次的視窗狀態再啟動,實際視窗座標記在 window.txt):
           #   1. 上次的尺寸比螢幕大 → 要縮到可用區域 90% 並置中(macos.png)
           #   2. 上次是放得下的 900×560、位於 (40,60) → 要原樣保留(macos-small.png)
-          # macOS 的 set_size 是非同步的,讀回舊尺寸就會漏縮 1、誤改 2
+          #   3. 接著正常結束 → 重開兩輪,存檔與外框都不可漂移(macos-cycle*.png、window-state-cycle*.json)
+          # macOS 的 set_size 是非同步的,讀回舊尺寸就會漏縮 1、誤改 2。
+          # Tauri 在 macOS 的預設標題列樣式(Visible)會開 NSFullSizeContentView:內容區涵蓋標題列
+          # (標題列疊在上方),window-state 存 / 還原的 inner 尺寸就是外框尺寸,所以 2 的外框高應正好是 560
           state_dir="$HOME/Library/Application Support/cc.kf56k.kefu"
           mkdir -p "$state_dir"
           seed() {
@@ -226,10 +229,59 @@ jobs:
           bounds "上次 900×560 於 (40,60)(應原樣保留)"
           if [ -z "${vh:-}" ]; then
             fail "情境 2 量不到視窗位置(見 swift.err)"
-          elif [ "$x" -ne 40 ] || [ "$y" -ne 60 ] || [ "$w" -ne 900 ]; then
-            fail "情境 2 使用者存的位置 / 寬度被改掉:$x,$y ${w}x$h(應為 40,60 寬 900)"
+          elif [ "$x" -ne 40 ] || [ "$y" -ne 60 ] || [ "$w" -ne 900 ] || [ "$h" -ne 560 ]; then
+            fail "情境 2 使用者存的位置 / 尺寸被改掉:$x,$y ${w}x$h(應為 40,60 900x560)"
           fi
-          log show --last 3m --style compact --predicate 'process == "kefu"' > "$out/system.log" 2>&1 || true
+
+          # 情境 3:正常結束(與 ⌘Q 同一路徑:applicationWillTerminate → RunEvent::Exit,window-state 此時存檔)
+          # → 重開,連續兩輪。存檔(inner 尺寸 + 外框位置)每輪都要等於情境 2 寫入的 900×560 於 (40,60),
+          # 重開後量到的外框要與上一輪相同;還原後的 inner 若比存檔小(例如少一個標題列高),存檔會每輪縮一次
+          cat > "$RUNNER_TEMP/quit.swift" <<'SWIFT'
+          import AppKit
+          guard CommandLine.arguments.count > 1, let pid = Int32(CommandLine.arguments[1]),
+                let app = NSRunningApplication(processIdentifier: pid) else { exit(2) }
+          exit(app.terminate() ? 0 : 1)
+          SWIFT
+          quit_app() {
+            local pid i
+            pid=$(pgrep -f "$app/Contents/MacOS/" | head -n 1 || true)
+            [ -n "$pid" ] || return 1
+            swift "$RUNNER_TEMP/quit.swift" "$pid" 2>>"$out/swift.err" || return 1
+            for i in $(seq 1 30); do
+              kill -0 "$pid" 2>/dev/null || return 0
+              sleep 0.5
+            done
+            return 1
+          }
+          saved_state() {
+            python3 -c 'import json,sys; s=json.load(open(sys.argv[1]))["main"]; print(s["width"], s["height"], s["x"], s["y"])' \
+              "$state_dir/.window-state.json" 2>>"$out/swift.err" || true
+          }
+          prev="${x:-} ${y:-} ${w:-} ${h:-}"
+          for cycle in 1 2; do
+            if ! quit_app; then
+              fail "情境 3 第 $cycle 輪無法正常結束 App"
+              break
+            fi
+            cp "$state_dir/.window-state.json" "$out/window-state-cycle$cycle.json" || true
+            s=$(saved_state)
+            echo "第 $cycle 輪結束時的存檔(內容區寬 高、外框 x y): ${s:-(讀不到)}" | tee -a "$out/window.txt"
+            if [ "$s" != "900 560 40 60" ]; then
+              fail "情境 3 第 $cycle 輪存檔漂移:${s:-(讀不到)}(應為 900 560 40 60)"
+            fi
+            open -n --stdout "$out/stdout-cycle$cycle.log" --stderr "$out/stderr-cycle$cycle.log" "$app"
+            sleep 15
+            screencapture -x "$out/macos-cycle$cycle.png"
+            bounds "第 $cycle 次重開(外框應與上一輪相同)"
+            if [ -z "${vh:-}" ]; then
+              fail "情境 3 第 $cycle 次重開量不到視窗位置(見 swift.err)"
+              break
+            elif [ "$x $y $w $h" != "$prev" ]; then
+              fail "情境 3 第 $cycle 次重開外框變了:$x,$y ${w}x$h(上一輪 $prev)"
+            fi
+            prev="$x $y $w $h"
+          done
+          log show --last 5m --style compact --predicate 'process == "kefu"' > "$out/system.log" 2>&1 || true
           ls -la ~/Library/Logs/DiagnosticReports > "$out/crash-reports.txt" 2>&1 || true
           if ! pgrep -fl "$app/Contents/MacOS/" > "$out/processes.txt"; then
             echo "找不到 App 行程(可能已閃退)" | tee "$out/processes.txt"
