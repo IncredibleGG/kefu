@@ -93,7 +93,7 @@ jobs:
             echo
             echo "## Android(kefu-android-debug.apk)"
             echo "- 用手機下載 APK 後點開安裝;系統詢問時,允許瀏覽器或檔案管理員 **安裝未知來源的應用程式**。"
-            echo "- 若已裝過簽章不同的舊版,需要先解除安裝舊版。"
+            echo "- 只有 Releases 的正式版用正式簽章,之後的正式版可直接覆蓋安裝。裝過 **v0.1.0**,或任何從 PR / CI 下載的測試版 APK 的,請先解除安裝一次再安裝。"
             echo
             echo "## iOS"
             echo "- **kefu-ios-simulator.zip**:給 Xcode 模擬器用。解壓後把 \`App.app\` 拖進模擬器視窗,或執行 \`xcrun simctl install booted App.app\`。"
