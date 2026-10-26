@@ -37,7 +37,12 @@ from app.core import crypto, ratelimit
 from app.core.config import settings
 from app.core.deps import CurrentStaff, DbSession
 from app.core.response import err, ok
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    TOKEN_VERSION_CLAIM,
+    create_access_token,
+    hash_password,
+    verify_password,
+)
 from app.core.urls import external_base_url, forwarded_scheme
 from app.models.conversation import Channel
 from app.models.iam import Permission, Role, Staff, role_permission, staff_role
@@ -45,7 +50,7 @@ from app.models.settings import TenantSettings
 from app.models.tenancy import Tenant
 from app.services import plans as plan_svc
 from app.services import realtime, totp
-from app.services.iam import seed_default_permissions
+from app.services.iam import bump_token_version, mark_password_changed, seed_default_permissions
 
 logger = logging.getLogger("kefu.auth")
 
@@ -393,17 +398,27 @@ async def _grants_for_staff(db, staff: Staff) -> list[str]:
     return sorted(set(role_names) | set(perm_codes))
 
 
-async def _issue_token(db, staff: Staff) -> dict:
-    """簽發正式 access token(含 roles / is_platform_admin claim),回登入信封。"""
+async def _sign_access_token(db, staff: Staff) -> str:
+    """簽發正式 access token(含 roles / is_platform_admin / tv claim)。
+
+    tv = 坐席目前的 token_version:改密 / 重設 / 2FA 變更會遞增版本,使先前簽發的 token
+    在每請求與 /ws/agent 複查時被判為已撤銷(見 core/deps.get_current_principal)。
+    """
     grants = await _grants_for_staff(db, staff)
-    token = create_access_token(
+    return create_access_token(
         {
             "sub": str(staff.id),
             "tenant_id": str(staff.tenant_id),
             "roles": grants,
             "is_platform_admin": bool(staff.is_platform_admin),
+            TOKEN_VERSION_CLAIM: int(staff.token_version or 0),
         }
     )
+
+
+async def _issue_token(db, staff: Staff) -> dict:
+    """簽發正式 access token,回登入信封。"""
+    token = await _sign_access_token(db, staff)
     return ok(
         {
             "access_token": token,
@@ -625,6 +640,8 @@ async def change_password(body: ChangePasswordIn, staff: CurrentStaff, db: DbSes
     """坐席自助修改密碼:先以 old_password 驗證當前密碼,通過才更新為 new_password。
 
     new_password 最短 6 碼。錯誤以 err() 回覆(信封 ok=false),前端據 code 顯示訊息。
+    成功即撤銷改密前簽發的所有 access token(其他裝置 / 分頁需重新登入);本次請求的
+    session 改用回應中的新 ``access_token`` 續用(客戶端須以之取代舊 token)。
     """
     if len(body.new_password) < 6:
         return err("WEAK_PASSWORD", "新密碼至少 6 碼")
@@ -634,10 +651,17 @@ async def change_password(body: ChangePasswordIn, staff: CurrentStaff, db: DbSes
     if not verify_password(body.old_password, row.password_hash):
         return err("INVALID_OLD_PASSWORD", "舊密碼不正確")
     row.password_hash = hash_password(body.new_password)
-    # 密碼版本綁定:改密即刷新時刻 → 任何先前簽發的重設連結因 iat 早於此而立即失效
-    row.password_changed_at = datetime.now(timezone.utc)
+    # 刷新 password_changed_at(先前的重設連結失效)+ token_version(既發 access token 失效)
+    await mark_password_changed(db, row)
     await db.commit()
-    return ok({"staff_id": str(row.id), "password_changed": True})
+    return ok(
+        {
+            "staff_id": str(row.id),
+            "password_changed": True,
+            "access_token": await _sign_access_token(db, row),
+            "token_type": "bearer",
+        }
+    )
 
 
 # =========================================================================== #
@@ -862,8 +886,9 @@ async def accept_invite(body: AcceptInviteIn, db: DbSession, request: Request):
     staff.password_hash = hash_password(body.password)
     staff.is_active = True
     staff.invite_accepted_at = datetime.now(timezone.utc)
-    # 密碼版本綁定:設密碼即刷新時刻 → 任何先前簽發的重設連結立即失效(與 reset 單次使用機制並存)
-    staff.password_changed_at = datetime.now(timezone.utc)
+    # 設密碼即刷新 password_changed_at(先前的重設連結失效,與 reset 單次使用機制並存)
+    # 並遞增 token_version(與其他改密入口一致;下方自動登入的 token 帶新版本)
+    await mark_password_changed(db, staff)
     if body.display_name and body.display_name.strip():
         staff.display_name = body.display_name.strip()
     await db.commit()
@@ -1133,6 +1158,9 @@ async def reset_password(body: ResetPasswordIn, db: DbSession):
       ``password_changed_at=now``,使同一 token 二次重放立即失效(now > iat)。
     - 缺 iat 的異常 token 一律 fail-closed 拒絕。
     - 與 accept-invite 的 ``invite_accepted_at`` 單次使用機制彼此獨立、可並存。
+
+    成功同時遞增 token_version:重設前簽發的所有 access token(含 /ws/agent 連線)失效。
+    本端點不發新 token,使用者以新密碼重新登入。
     """
     if len(body.new_password) < 6:
         return err("WEAK_PASSWORD", "新密碼至少 6 碼")
@@ -1161,7 +1189,7 @@ async def reset_password(body: ResetPasswordIn, db: DbSession):
         return err("INVALID_TOKEN", "此重設連結已失效(已使用或密碼已變更),請重新申請")
 
     staff.password_hash = hash_password(body.new_password)
-    staff.password_changed_at = datetime.now(timezone.utc)
+    await mark_password_changed(db, staff)
     await db.commit()
     return ok({"staff_id": str(staff.id), "password_reset": True})
 
@@ -1264,7 +1292,11 @@ async def twofa_setup(staff: CurrentStaff, db: DbSession):
 
 @router.post("/2fa/enable")
 async def twofa_enable(body: TwoFaEnableIn, staff: CurrentStaff, db: DbSession):
-    """驗證使用者以驗證器 App 產生的 code,通過即把 totp_enabled 設為 true。"""
+    """驗證使用者以驗證器 App 產生的 code,通過即把 totp_enabled 設為 true。
+
+    啟用即撤銷先前僅憑密碼簽發的所有 access token(遞增 token_version);本次請求的
+    session 改用回應中的新 ``access_token`` 續用。冪等呼叫(已啟用)不撤銷、不發新 token。
+    """
     row = await _load_staff(db, staff.staff_id)
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="staff not found")
@@ -1279,13 +1311,25 @@ async def twofa_enable(body: TwoFaEnableIn, staff: CurrentStaff, db: DbSession):
     # 啟用即產生一組備援碼(明文僅此次回傳;之後只能重新產生,無法再取得原碼)
     plain, stored = generate_recovery_codes()
     row.totp_recovery_codes = stored
+    await bump_token_version(db, row)
     await db.commit()
-    return ok({"totp_enabled": True, "recovery_codes": plain})
+    return ok(
+        {
+            "totp_enabled": True,
+            "recovery_codes": plain,
+            "access_token": await _sign_access_token(db, row),
+            "token_type": "bearer",
+        }
+    )
 
 
 @router.post("/2fa/disable")
 async def twofa_disable(body: TwoFaDisableIn, staff: CurrentStaff, db: DbSession):
-    """停用 2FA:需提供有效 OTP 或帳號密碼再次驗證身分;通過後清除密鑰並關閉。"""
+    """停用 2FA:需提供有效 OTP 或帳號密碼再次驗證身分;通過後清除密鑰並關閉。
+
+    移除認證因子同樣撤銷先前簽發的所有 access token(遞增 token_version);本次請求的
+    session 改用回應中的新 ``access_token`` 續用。冪等呼叫(已停用)不撤銷、不發新 token。
+    """
     row = await _load_staff(db, staff.staff_id)
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="staff not found")
@@ -1303,8 +1347,15 @@ async def twofa_disable(body: TwoFaDisableIn, staff: CurrentStaff, db: DbSession
     row.totp_enabled = False
     row.totp_secret = None
     row.totp_recovery_codes = None  # 停用即清除備援碼(重新啟用時另產生一組新的)
+    await bump_token_version(db, row)
     await db.commit()
-    return ok({"totp_enabled": False})
+    return ok(
+        {
+            "totp_enabled": False,
+            "access_token": await _sign_access_token(db, row),
+            "token_type": "bearer",
+        }
+    )
 
 
 @router.post("/2fa/enroll/verify")
@@ -1312,7 +1363,8 @@ async def twofa_enroll_verify(body: TwoFaEnrollVerifyIn, db: DbSession, request:
     """組織強制 2FA 設定流程第二步:驗證掃碼後的動態碼,通過即啟用 2FA 並自動登入(發正式 token)。
 
     - challenge 為 login 在 ``requires_2fa_enrollment`` 時回的短時效 enroll 權杖(purpose=2fa_enroll)。
-    - 通過後:``totp_enabled=True``、產生一組備援碼(明文僅此次回傳)、簽發正式 token。
+    - 通過後:``totp_enabled=True``、產生一組備援碼(明文僅此次回傳)、簽發正式 token;
+      與 /2fa/enable 一致遞增 token_version,政策開啟前僅憑密碼簽發的 token 一併失效。
     - 一併重查 IP 白名單(與 login 同一把關,平台超管豁免),避免繞過。
     - OTP 暴力破解防護沿用每帳號限流。
     """
@@ -1355,6 +1407,7 @@ async def twofa_enroll_verify(body: TwoFaEnrollVerifyIn, db: DbSession, request:
     staff.totp_enabled = True
     plain, stored = generate_recovery_codes()
     staff.totp_recovery_codes = stored
+    await bump_token_version(db, staff)
     await db.commit()
 
     # 完成 2FA 綁定即自動登入;備援碼明文僅此次回傳,提醒使用者妥善保存

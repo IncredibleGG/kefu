@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -160,8 +161,8 @@ async def test_guard_true_claim_passes_and_parses_sub():
 
     sid = uuid.uuid4()
     token = create_access_token({"sub": str(sid), "is_platform_admin": True})
-    # DB 回查命中一個有效超管列(fake 只需回非 None 物件)
-    db = _FakeSession(results=[[object()]])
+    # DB 回查命中一個有效超管列(fake 只需帶 token_version;token 無 tv claim 視為版本 0)
+    db = _FakeSession(results=[[SimpleNamespace(token_version=0)]])
     principal = await require_platform_admin(db, authorization=f"Bearer {token}")
     assert principal.staff_id == sid
     assert principal.claims["is_platform_admin"] is True

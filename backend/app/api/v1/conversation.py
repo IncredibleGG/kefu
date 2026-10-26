@@ -24,7 +24,7 @@ from starlette.websockets import WebSocketState
 from app.core.db import SessionLocal
 from app.core.deps import CurrentStaff, DbSession
 from app.core.response import err, ok
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, token_version_matches
 from app.models.conversation import Message, Session
 from app.models.tag import Tag, TagRelation
 from app.models.visitor import Contact, Visitor
@@ -1539,6 +1539,7 @@ async def _authenticate_agent_ws(token: str | None) -> tuple[uuid.UUID, uuid.UUI
     撤銷規則對齊 ``core/deps.get_current_principal``:
     - token 無效 / 過期 / 用途型權杖 / claims 不完整 → 拒絕;
     - 坐席被軟刪或停用 → 拒絕;
+    - token 的 tv claim 與 Staff.token_version 不符(簽發後已改密 / 重設 / 2FA 變更)→ 拒絕;
     - 租戶被停用 → 拒絕,平台超管除外(須 token claim 與 DB 現況**同時**為平台超管,
       被降權者不得以殘留 claim 繞過租戶停用);
     - token 的 tenant_id 與坐席實際所屬租戶不符 → 拒絕(縱深防禦)。
@@ -1567,6 +1568,7 @@ async def _authenticate_agent_ws(token: str | None) -> tuple[uuid.UUID, uuid.UUI
                         Staff.deleted_at,
                         Staff.tenant_id,
                         Staff.is_platform_admin,
+                        Staff.token_version,
                         Tenant.is_active,
                     )
                     .outerjoin(Tenant, Tenant.id == Staff.tenant_id)
@@ -1579,8 +1581,17 @@ async def _authenticate_agent_ws(token: str | None) -> tuple[uuid.UUID, uuid.UUI
 
     if row is None:
         return staff_id, tenant_id
-    staff_active, staff_deleted_at, staff_tenant_id, db_platform_admin, tenant_active = row
+    (
+        staff_active,
+        staff_deleted_at,
+        staff_tenant_id,
+        db_platform_admin,
+        staff_token_version,
+        tenant_active,
+    ) = row
     if staff_deleted_at is not None or not staff_active:
+        return None
+    if not token_version_matches(payload, staff_token_version):
         return None
     if staff_tenant_id is not None and staff_tenant_id != tenant_id:
         return None
@@ -1643,7 +1654,8 @@ async def _presence_keepalive(
     """連線存活期間定期刷新登記(不更新客戶端 seen),避免舊版不送 ping 的客戶端被當成殘留。
 
     帶 ``ws`` 時另每 ``WS_AUTH_RECHECK_TICKS`` 次刷新重跑一次握手時的認證 / 即時撤銷檢查
-    (``_authenticate_agent_ws``,含 JWT exp):坐席被停用 / 軟刪、租戶被停用或 token 過期 →
+    (``_authenticate_agent_ws``,含 JWT exp):坐席被停用 / 軟刪、租戶被停用、token 過期,
+    或坐席已改密 / 重設 / 2FA 變更(token_version 不符)→
     以 4401 關閉連線(客戶端據此走登出流程),避免已撤銷的帳號持續收到整個租戶的坐席事件。
     關閉後主迴圈的 receive 會收到斷線,既有 finally 照常取消任務並清理 presence。
     DB 故障無法判定時與握手 / REST 一致:保守放行(連線維持)。

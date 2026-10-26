@@ -4,18 +4,20 @@
 - 預設權限碼種子清單與 per-tenant 種子函式。
 - BYO-Key(llm_config)寫入後回傳時的金鑰遮罩。
 - 租戶範圍取物件、分頁等小工具。
+- 認證因子變更時撤銷既發 access token(``bump_token_version`` / ``mark_password_changed``)。
 
 路由層(app/api/v1/tenancy.py、app/api/v1/iam.py)只依賴這裡的函式簽名。
 """
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.iam import Permission, Role, role_permission
+from app.models.iam import Permission, Role, Staff, role_permission
 
 # ---------------------------------------------------------------------------
 # 預設權限碼種子清單(code, 說明)。新租戶建立時可一次寫入,
@@ -208,3 +210,27 @@ async def count_query(db: AsyncSession, stmt) -> int:
     """對一個 select 語句取總筆數(用於分頁 total)。"""
     subq = stmt.order_by(None).subquery()
     return int((await db.execute(select(func.count()).select_from(subq))).scalar_one())
+
+
+async def bump_token_version(db: AsyncSession, staff: Staff) -> int:
+    """原子遞增坐席的 token_version,使先前簽發的 access token 全數失效;回新版本。
+
+    以 SQL 端 ``token_version + 1`` 遞增(非讀改寫):兩個同時進行的變更會得到不同版本,
+    先完成者事後簽發的 token 也會被後完成者撤銷。flush 後重讀本欄,呼叫端可直接用
+    ``staff.token_version`` 簽發新 token。僅 flush,不 commit(併入呼叫端交易)。
+    """
+    staff.token_version = Staff.token_version + 1
+    await db.flush()
+    await db.refresh(staff, attribute_names=["token_version"])
+    return staff.token_version
+
+
+async def mark_password_changed(db: AsyncSession, staff: Staff) -> int:
+    """任何改密入口共用的收尾:刷新 password_changed_at 並撤銷既發 access token。
+
+    - password_changed_at=now:先前簽發的密碼重設連結因 iat 早於此而失效(見 auth.reset_password)。
+    - token_version + 1:改密前簽發的 access token(含 /ws/agent 連線)全數失效。
+    呼叫端負責先寫好 password_hash、事後 commit;需要續用的 session 另行簽發新 token。
+    """
+    staff.password_changed_at = datetime.now(timezone.utc)
+    return await bump_token_version(db, staff)

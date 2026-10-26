@@ -26,7 +26,7 @@ from sqlalchemy import and_, func, insert, select
 
 from app.core.deps import DbSession
 from app.core.response import err, ok
-from app.core.security import decode_access_token, hash_password
+from app.core.security import decode_access_token, hash_password, token_version_matches
 from app.models.billing import Plan, Subscription
 from app.models.conversation import Session
 from app.models.iam import Role, Staff, staff_role
@@ -61,6 +61,7 @@ async def require_platform_admin(
       任一不符 → 403。這樣被降權 / 停用 / 軟刪的超管於下一個請求立即失效,不必等
       24h token 過期(撤銷即時生效)。對齊 deps.get_current_principal 的租戶級回查,
       但平台超管為最高權限,故此處回查後才放行(不僅信任 claim)。
+    - token 的 tv claim 與 Staff.token_version 不符(簽發後已改密 / 重設 / 2FA 變更)→ 401。
     刻意不解析 / 不要求 tenant_id:平台端點跨租戶運作。
     """
     if not authorization or not authorization.lower().startswith("bearer "):
@@ -93,6 +94,8 @@ async def require_platform_admin(
     ).scalar_one_or_none()
     if staff is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail="platform admin required")
+    if not token_version_matches(payload, staff.token_version):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="session revoked")
     return PlatformPrincipal(claims=payload, staff_id=staff_id)
 
 

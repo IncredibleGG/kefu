@@ -4,7 +4,8 @@
  *  - 斷線:指數退避 + jitter(上限 30 秒);App 回前景 / 網路恢復時 kick() 立即重連。
  *  - 心跳:每 25 秒送 {"type":"ping"};伺服器曾回過 pong 才啟用「10 秒沒 pong 視為斷線」
  *    (舊版伺服器不回 pong,不可因此判定斷線)。
- *  - close 4401(token 無效 / 帳號停用):走既有 401 登出流程,不再重試。
+ *  - close 4401(token 無效 / 帳號停用 / 已被撤銷):走既有 401 登出流程,不再重試;
+ *    但若本機 token 已換新(改密 / 2FA 變更後後端回新 token),改以新 token 立即重連。
  *  - 前景 / 背景切換時送 {"type":"app_state","payload":{"foreground":bool}}(後端據此決定是否推播)。
  *  - mock 模式(mockMode !== "off"):on 直接 mock;auto 連不上兩次後回退 mock 事件產生器。
  *  ============================================================ */
@@ -62,6 +63,8 @@ export class AgentSocket {
   private pongSupported = false;
   /** 平台事件(resume / pause / online)取消函式 */
   private platformOffs: (() => void)[] = [];
+  /** 目前連線所帶的 token(token 換發後據此判斷是否需以新 token 重連) */
+  private connToken: string | null = null;
 
   connect() {
     this.stopped = false;
@@ -111,6 +114,15 @@ export class AgentSocket {
     if (ws.readyState === WebSocket.CONNECTING) return;
     if (this.pongSupported) this.sendPing();
     else if (isMobileApp) this.reopen();
+  }
+
+  /**
+   * token 已換發(改密 / 2FA 變更後後端撤銷舊 token、回新 token):以新 token 重連,
+   * 免得舊連線在伺服器定期複查時被 4401 關閉。未連線 / mock 時不動作(下次連線自然帶新 token)。
+   */
+  refreshToken() {
+    if (this.stopped || this.state === "mock" || config.mockMode === "on") return;
+    if (this.ws && getToken() !== this.connToken) this.reopen();
   }
 
   /** 主動重連(套用新的 session 訂閱),不走斷線退避,盡量無縫。 */
@@ -204,6 +216,7 @@ export class AgentSocket {
     }
     try {
       const token = getToken() ?? "";
+      this.connToken = token;
       const params: Record<string, string> = {
         token,
         device_id: getDeviceId(),
@@ -247,8 +260,14 @@ export class AgentSocket {
           if (!this.stopped) this.openReal();
           return;
         }
-        // 認證失敗:走既有 401 登出流程(清 token → 路由守衛導回登入),不再重試
+        // 認證失敗:走既有 401 登出流程(清 token → 路由守衛導回登入),不再重試。
+        // 例外:被撤銷的是舊 token、本機已換發新 token(改密 / 2FA 變更)→ 以新 token 立即重連。
         if (e.code === CLOSE_UNAUTHORIZED) {
+          const current = getToken();
+          if (current && current !== token) {
+            if (!this.stopped) this.openReal();
+            return;
+          }
           this.stopped = true;
           this.setState("closed");
           triggerUnauthorized();

@@ -51,10 +51,8 @@ export async function apiFetch<T>(
   const headers: Record<string, string> = { Accept: "application/json" };
   // FormData 交給瀏覽器自帶 multipart boundary,勿手動設 Content-Type
   if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
-  if (auth) {
-    const token = getToken();
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-  }
+  const sentToken = auth ? getToken() : null;
+  if (sentToken) headers["Authorization"] = `Bearer ${sentToken}`;
 
   const res = await fetch(buildUrl(path, params), {
     method,
@@ -64,7 +62,8 @@ export async function apiFetch<T>(
   });
 
   if (res.status === 401) {
-    onUnauthorized?.();
+    // 請求送出後 token 已換發(改密 / 2FA 變更,舊 token 被撤銷):不登出,只讓這次請求失敗
+    if (!sentToken || getToken() === sentToken) onUnauthorized?.();
     throw new ApiError("UNAUTHORIZED", "登入已過期,請重新登入", 401);
   }
 

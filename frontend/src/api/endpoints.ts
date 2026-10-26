@@ -1159,7 +1159,8 @@ export const iamApi = {
     }),
 
   setStaffPassword: (id: string, new_password: string) =>
-    call<{ id: string; password_changed: boolean }>({
+    // access_token 僅在改自己的密碼時回傳(舊 token 已被撤銷,需改用此 token)
+    call<{ id: string; password_changed: boolean; access_token?: string; token_type?: string }>({
       path: `/api/v1/iam/staff/${id}/password`,
       method: "POST",
       body: { new_password },

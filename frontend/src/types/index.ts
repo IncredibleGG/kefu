@@ -785,4 +785,7 @@ export interface DomainVerifyResult {
 export interface ChangePasswordResult {
   staff_id: string;
   password_changed: boolean;
+  /** 改密後伺服器撤銷舊 token;本次 session 須改用此新 token(舊版伺服器不回) */
+  access_token?: string;
+  token_type?: string;
 }

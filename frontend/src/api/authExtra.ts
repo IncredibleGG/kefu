@@ -10,7 +10,7 @@
  *  一律走 {ok,data,error} 信封(apiFetch 已解包 data);公開端點以 auth:false 不帶 Bearer。 */
 import { apiFetch, ApiError } from "./client";
 import { clearToken, setToken } from "@/lib/server";
-import { useAuth } from "@/stores/auth";
+import { adoptRotatedToken, useAuth } from "@/stores/auth";
 
 /* ------------------------------ 登入(含 2FA) ------------------------------ */
 export interface LoginAttemptResult {
@@ -159,21 +159,34 @@ export interface TwoFaSetupResult {
   period: number;
 }
 
+/** /2fa/enable、/2fa/disable 的回應:實際變更時附新 access_token(冪等呼叫 / 舊版伺服器不回)。 */
+export interface TwoFaToggleResult {
+  totp_enabled: boolean;
+  access_token?: string;
+  token_type?: string;
+}
+
 export const twoFaApi = {
   /** 目前登入坐席的 2FA 狀態(需 Bearer)。 */
   status: () => apiFetch<TwoFaStatus>("/api/v1/auth/2fa/status"),
   /** 產生新密鑰(未啟用),回 otpauth URI 供掃碼 / 手動加入。 */
   setup: () => apiFetch<TwoFaSetupResult>("/api/v1/auth/2fa/setup", { method: "POST" }),
-  /** 以驗證器 App 產生的 code 啟用。 */
-  enable: (code: string) =>
-    apiFetch<{ totp_enabled: boolean }>("/api/v1/auth/2fa/enable", {
+  /** 以驗證器 App 產生的 code 啟用。伺服器撤銷先前的 token,本次 session 改用回應中的新 token。 */
+  enable: async (code: string) => {
+    const res = await apiFetch<TwoFaToggleResult>("/api/v1/auth/2fa/enable", {
       method: "POST",
       body: { code },
-    }),
-  /** 停用:需帶有效 OTP 或帳號密碼(擇一)。 */
-  disable: (arg: { code?: string; password?: string }) =>
-    apiFetch<{ totp_enabled: boolean }>("/api/v1/auth/2fa/disable", {
+    });
+    adoptRotatedToken(res?.access_token);
+    return res;
+  },
+  /** 停用:需帶有效 OTP 或帳號密碼(擇一)。token 換發同 enable。 */
+  disable: async (arg: { code?: string; password?: string }) => {
+    const res = await apiFetch<TwoFaToggleResult>("/api/v1/auth/2fa/disable", {
       method: "POST",
       body: arg,
-    }),
+    });
+    adoptRotatedToken(res?.access_token);
+    return res;
+  },
 };

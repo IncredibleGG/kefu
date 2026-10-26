@@ -9,6 +9,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Integer,
     String,
     Table,
     Text,
@@ -74,12 +75,20 @@ class Staff(Base, TenantScopedMixin):
     # None / 空清單 = 尚未產生(或已用罄)。走 JSONB,無需固定欄寬。
     totp_recovery_codes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     # 密碼版本綁定(重設 token 單次使用):任何「改密入口」(change-password /
-    # accept-invite 設密碼 / reset-password)成功時設為 now。reset-password 驗證時,
+    # accept-invite 設密碼 / reset-password / iam 管理員改密)成功時設為 now。reset-password 驗證時,
     # 若本欄 >= 重設 token 的簽發時刻 iat,代表該 token 已被用過、或密碼已被其他途徑變更,
     # 一律拒(INVALID_TOKEN)。這使重設 token 單次使用,且任何改密後舊重設連結立即失效。
     # None 表示此帳號從未改過密(reset 首次使用時放行,成功後才寫入)。
     password_changed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # 存取權杖版本(撤銷既發 session):簽發 access token 時以 ``tv`` claim 夾帶本欄;
+    # 每請求 / /ws/agent 握手與定期複查時比對,不符即視為已撤銷(401 / close 4401)。
+    # 任何「認證因子變更」(改密 / 重設密碼 / 管理員改密 / 接受邀請設密 / 2FA 啟用或停用)
+    # 以 services.iam.bump_token_version 原子遞增,使變更前簽發的 token 全數失效;
+    # 發起變更的那個 session 由端點另發新 token 續用。缺 tv claim 的舊 token 視為版本 0。
+    token_version: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
     )
     # 坐席邀請流程:
     # - invited_at:邀請(或重寄)時設。用途有二:(1) 辨識 pending 邀請
