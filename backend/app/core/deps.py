@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token, token_version_matches
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
@@ -48,12 +48,12 @@ async def _load_revocation_state(db: AsyncSession, staff_id: uuid.UUID):
     """單一 select 取回撤銷判定所需狀態,供每請求即時撤銷檢查。
 
     回傳:
-    - ``(staff_active, staff_deleted_at, tenant_active)`` 元組(找到坐席);
+    - ``(staff_active, staff_deleted_at, staff_token_version, tenant_active)`` 元組(找到坐席);
     - ``None``:查無此坐席列(非撤銷狀態——本系統的刪除為軟刪,列仍在且帶
       ``deleted_at``,故「列不存在」多為測試/邊界,採不阻擋以維持既有 token 通過);
     - ``_REVOCATION_UNKNOWN``:DB 故障/查詢失敗,無法判定 ⇒ 保守放行。
 
-    效能:一條 select、僅取所需三欄;以 outer join 一次帶出坐席與其租戶狀態。
+    效能:一條 select、僅取所需四欄;以 outer join 一次帶出坐席與其租戶狀態。
     失敗時 rollback,避免污染本請求後續共用的 session 交易。
     """
     try:
@@ -62,7 +62,7 @@ async def _load_revocation_state(db: AsyncSession, staff_id: uuid.UUID):
 
         return (
             await db.execute(
-                select(Staff.is_active, Staff.deleted_at, Tenant.is_active)
+                select(Staff.is_active, Staff.deleted_at, Staff.token_version, Tenant.is_active)
                 .outerjoin(Tenant, Tenant.id == Staff.tenant_id)
                 .where(Staff.id == staff_id)
             )
@@ -93,15 +93,18 @@ async def get_current_principal(
     except (KeyError, ValueError):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="malformed token claims")
 
-    # 每請求重查 DB,支援即時撤銷:刪除/停用坐席或停用租戶後,既發 JWT 立即失效
-    # (不必等 24h 過期)。JWT 已驗簽,這裡只加一層即時狀態核對。
+    # 每請求重查 DB,支援即時撤銷:刪除/停用坐席、停用租戶或改密 / 重設 / 2FA 變更後,
+    # 既發 JWT 立即失效(不必等 24h 過期)。JWT 已驗簽,這裡只加一層即時狀態核對。
     is_platform_admin = bool(payload.get("is_platform_admin"))
     state = await _load_revocation_state(db, principal.staff_id)
     if state is not _REVOCATION_UNKNOWN and state is not None:
-        staff_active, staff_deleted_at, tenant_active = state
+        staff_active, staff_deleted_at, staff_token_version, tenant_active = state
         # 坐席被軟刪或停用 ⇒ 撤銷。
         if staff_deleted_at is not None or not staff_active:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="account disabled")
+        # token 簽發後該坐席已改密 / 重設 / 2FA 變更(token_version 已遞增)⇒ 撤銷。
+        if not token_version_matches(payload, staff_token_version):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="session revoked")
         # 租戶被停用 ⇒ 撤銷。平台超管跨租戶運作、不綁單一租戶,故不因租戶停用而誤擋
         # (與 platform.require_platform_admin 的既有行為一致)。
         if not is_platform_admin and tenant_active is False:

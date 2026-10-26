@@ -17,6 +17,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, insert, select
 
+from app.api.v1.auth import _sign_access_token
 from app.core.deps import CurrentStaff, DbSession
 from app.core.response import err, ok
 from app.core.security import hash_password
@@ -33,6 +34,7 @@ from app.services import presence
 from app.services.iam import (
     VALID_STAFF_STATUS,
     count_query,
+    mark_password_changed,
     paginate_params,
     seed_default_permissions,
 )
@@ -345,7 +347,12 @@ async def update_staff(
 async def change_password(
     staff_id: uuid.UUID, body: PasswordIn, principal: CurrentStaff, db: DbSession
 ):
-    """改密碼。管理者需 staff.manage;本人可改自己的密碼。"""
+    """改密碼。管理者需 staff.manage;本人可改自己的密碼。
+
+    成功即撤銷該坐席改密前簽發的所有 access token(遞增 token_version,其所有裝置須重新
+    登入),並使其未用的密碼重設連結失效。本人改自己的密碼時,回應另帶新 ``access_token``
+    供本次 session 續用;管理者改他人密碼時呼叫者自己的 token 不受影響,不回 token。
+    """
     if staff_id != principal.staff_id:
         principal.require("staff.manage")
     staff = await _get_staff(db, principal.tenant_id, staff_id)
@@ -354,8 +361,13 @@ async def change_password(
     if await _forbid_platform_admin_target(db, principal, staff):
         return err("STAFF_PLATFORM_ADMIN_PROTECTED", "無權重設平台超級管理員密碼")
     staff.password_hash = hash_password(body.new_password)
+    await mark_password_changed(db, staff)
     await db.commit()
-    return ok({"id": str(staff_id), "password_changed": True})
+    data = {"id": str(staff_id), "password_changed": True}
+    if staff_id == principal.staff_id:
+        data["access_token"] = await _sign_access_token(db, staff)
+        data["token_type"] = "bearer"
+    return ok(data)
 
 
 @router.patch("/staff/{staff_id}/status")

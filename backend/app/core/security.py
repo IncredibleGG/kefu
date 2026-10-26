@@ -28,8 +28,25 @@ def verify_password(raw: str, hashed: str) -> bool:
         return False
 
 
+# access token 夾帶的坐席權杖版本 claim(對應 Staff.token_version)。
+TOKEN_VERSION_CLAIM = "tv"
+
+
+def token_version_matches(payload: dict[str, Any], current: int | None) -> bool:
+    """token 的 tv claim 是否等於坐席目前的 token_version(不符即視為已撤銷)。
+
+    - 缺 claim(本機制上線前簽發的舊 token)視為版本 0:部署後照常可用到過期,
+      但該坐席一旦改密 / 重設 / 2FA 變更(版本 ≥ 1)即一併失效。
+    - claim 非整數(含 bool)一律拒絕,不嘗試轉型。
+    """
+    claimed = payload.get(TOKEN_VERSION_CLAIM, 0)
+    if type(claimed) is not int:
+        return False
+    return claimed == (current or 0)
+
+
 def create_access_token(claims: dict[str, Any]) -> str:
-    """claims must include: sub (staff_id), tenant_id, roles (list[str]).
+    """claims must include: sub (staff_id), tenant_id, roles (list[str]), tv (token_version).
 
     正式 access token 標記 token_type=access,且不得帶 purpose(用途型權杖如
     2FA challenge / 密碼重設 token 才帶 purpose,見 api/v1/auth.py)。
