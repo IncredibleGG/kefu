@@ -60,7 +60,6 @@ jobs:
         working-directory: frontend
     env:
       GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
-      DEBUG_KS_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
       # 共用簽章憑證的 SHA-256(公開資訊);有 keystore secret 時,建出來的 APK 必須是這張憑證
       ANDROID_CERT_SHA256: 54f4556af45dbe879d79b00d1794b34ed8cc4468838ce7432eef78e09d9dfdd5
     steps:
@@ -120,13 +119,19 @@ jobs:
 
       # 共用簽章:同一把 key 新版才能直接覆蓋安裝。由 app/build.gradle 讀 KEFU_ANDROID_KEYSTORE;
       # 不能只放 ~/.android/debug.keystore(AGP 在 CI 不讀那裡,v0.1.0 因此是每次隨機產生的簽章)
+      # keystore 是之後每一版的長期簽章身分:secret 只給這一步(npm ci / vite / cap sync 等第三方程式碼讀不到),
+      # 之後的步驟只看得到檔案路徑 KEFU_ANDROID_KEYSTORE
       - name: 共用簽章 keystore
-        if: env.DEBUG_KS_B64 != ''
         shell: bash
         env:
+          DEBUG_KS_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
           DEBUG_KS_PW: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
         run: |
           set -euo pipefail
+          if [ -z "$DEBUG_KS_B64" ]; then
+            echo "沒有 ANDROID_DEBUG_KEYSTORE_B64,改用 AGP 預設 debug keystore(由「檢查簽章」決定是否放行)"
+            exit 0
+          fi
           if [ -z "$DEBUG_KS_PW" ]; then
             echo "::error title=簽章::有 ANDROID_DEBUG_KEYSTORE_B64 卻沒有 ANDROID_DEBUG_KEYSTORE_PASSWORD"
             exit 1
@@ -147,7 +152,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "$DEBUG_KS_B64" ]; then
+          if [ -z "${KEFU_ANDROID_KEYSTORE:-}" ]; then
             # 沒有 keystore 時 APK 是 AGP 隨機產生的簽章:可發佈的建置一律擋下,PR(含 fork)只警告
             if [ "$GITHUB_REF_TYPE" = tag ] || [ "$GITHUB_REF" = refs/heads/main ]; then
               echo "::error title=簽章::缺少 ANDROID_DEBUG_KEYSTORE_B64,APK 會是隨機簽章,不可發佈"
