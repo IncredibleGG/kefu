@@ -116,7 +116,8 @@ tauri-driver,runtime 若恢復採用環境變數,標準路徑也能通過。
 
 ```bash
 curl -fsSL https://get.maestro.mobile.dev | bash      # 需要 Java 17+
-# Android:開好模擬器並 adb install -r -g kefu-android-debug.apk
+# Android:開好模擬器,先 adb uninstall cc.kf56k.kefu 再 adb install -r -g kefu-android-debug.apk(要看到 Success;
+#          簽章不同時覆蓋安裝會失敗,接著測到的是舊版)
 # iOS:xcrun simctl boot <udid> && xcrun simctl install <udid> App.app
 export E2E_SERVER=https://kf.56k.cc E2E_EMAIL=... E2E_PASSWORD=...
 bash e2e/maestro/run.sh ./e2e-out                    # iOS 可加:--device <UDID>
