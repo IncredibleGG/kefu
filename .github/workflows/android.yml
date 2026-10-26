@@ -4,7 +4,8 @@
 #   ANDROID_DEBUG_KEYSTORE_B64       共用簽章 keystore(PKCS12、alias kefu)的 base64
 #   ANDROID_DEBUG_KEYSTORE_PASSWORD  它的密碼
 #   兩者讓每次建置簽章相同,新版才能覆蓋安裝;憑證指紋固定在下方 ANDROID_CERT_SHA256。
-#   tag 與 main 的建置沒有 keystore 會直接失敗(不可發佈隨機簽章的 APK);PR(含 fork)只警告。
+#   只有 tag 與 main 的建置會拿 keystore 來簽(沒有就直接失敗,不可發佈隨機簽章的 APK);
+#   PR 與手動在其他分支觸發的建置刻意用 AGP 隨機簽章:公開的 artifact 不該是能覆蓋正式版的安裝檔。
 name: android
 
 on:
@@ -123,6 +124,8 @@ jobs:
       # 但 assembleDebug 會在同一個 Gradle 行程執行 node_modules 裡 Capacitor 外掛的建置腳本,它們看得到
       # 密碼與 keystore 檔(在 Gradle 內簽章就無法避免,只能信任這些依賴)。檔名隨機,建置完立刻刪除。
       - name: 共用簽章 keystore
+        # 只給可發佈的建置:PR 的 APK 是公開 artifact,用正式簽章就能覆蓋安裝到使用者的正式版(還保留資料與登入)
+        if: github.ref_type == 'tag' || github.ref == 'refs/heads/main'
         shell: bash
         env:
           DEBUG_KS_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
@@ -164,7 +167,7 @@ jobs:
               echo "::error title=簽章::缺少 ANDROID_DEBUG_KEYSTORE_B64,APK 會是隨機簽章,不可發佈"
               exit 1
             fi
-            echo "::warning title=簽章::沒有共用 keystore,這次的 APK 是隨機簽章(無法覆蓋安裝其他版本)"
+            echo "::warning title=簽章::非發佈建置(PR / 其他分支)刻意用隨機簽章,這個 APK 無法覆蓋安裝正式版"
             exit 0
           fi
           apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
