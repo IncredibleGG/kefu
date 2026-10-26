@@ -123,8 +123,14 @@ jobs:
       - name: 共用簽章 keystore
         if: env.DEBUG_KS_B64 != ''
         shell: bash
+        env:
+          DEBUG_KS_PW: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
         run: |
           set -euo pipefail
+          if [ -z "$DEBUG_KS_PW" ]; then
+            echo "::error title=簽章::有 ANDROID_DEBUG_KEYSTORE_B64 卻沒有 ANDROID_DEBUG_KEYSTORE_PASSWORD"
+            exit 1
+          fi
           ks="$RUNNER_TEMP/kefu-android.p12"
           printf '%s' "$DEBUG_KS_B64" | base64 -d > "$ks"
           echo "KEFU_ANDROID_KEYSTORE=$ks" >> "$GITHUB_ENV"
@@ -151,14 +157,21 @@ jobs:
             exit 0
           fi
           apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
-          # 各版 apksigner 的前綴不同(「Signer #1 …」或「Signer (minSdkVersion=…) …」),只比對後半段
           "$apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee "$RUNNER_TEMP/apk-certs.txt"
-          actual=$(awk -F': ' '/certificate SHA-256 digest/{print $2; exit}' "$RUNNER_TEMP/apk-certs.txt")
-          echo "APK 簽章憑證 SHA-256:$actual"
-          if [ "$actual" != "$ANDROID_CERT_SHA256" ]; then
-            echo "::error title=簽章::APK 不是用共用 keystore 簽的(預期 $ANDROID_CERT_SHA256),新版將無法覆蓋安裝"
+          # 各版 apksigner 的前綴不同(「Signer #1 …」「V2 Signer: …」「Signer (minSdkVersion=…) …」),
+          # 只取「digest: 」之後的值;每個 signer 都必須是共用憑證
+          mapfile -t digests < <(sed -n 's/.*certificate SHA-256 digest: *\([0-9A-Fa-f]*\).*/\1/p' "$RUNNER_TEMP/apk-certs.txt")
+          echo "APK 簽章憑證 SHA-256:${digests[*]:-(讀不到)}"
+          if [ "${#digests[@]}" -eq 0 ]; then
+            echo "::error title=簽章::apksigner 的輸出裡讀不到憑證 SHA-256"
             exit 1
           fi
+          for d in "${digests[@]}"; do
+            if [ "${d,,}" != "$ANDROID_CERT_SHA256" ]; then
+              echo "::error title=簽章::APK 不是用共用 keystore 簽的(讀到 $d,預期 $ANDROID_CERT_SHA256),新版將無法覆蓋安裝"
+              exit 1
+            fi
+          done
 
       - name: 整理產物
         run: cp android/app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/kefu-android-debug.apk"
