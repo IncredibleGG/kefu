@@ -56,6 +56,8 @@ jobs:
     env:
       GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
       DEBUG_KS_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+      # 共用簽章憑證的 SHA-256(公開資訊);有 keystore secret 時,建出來的 APK 必須是這張憑證
+      ANDROID_CERT_SHA256: 54f4556af45dbe879d79b00d1794b34ed8cc4468838ce7432eef78e09d9dfdd5
     steps:
       - uses: actions/checkout@v7
         with:
@@ -111,20 +113,38 @@ jobs:
           printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 -d > android/app/google-services.json
           echo "已寫入 android/app/google-services.json"
 
-      - name: 共用 debug keystore(選填,讓新版能直接覆蓋安裝)
+      # 共用簽章:同一把 key 新版才能直接覆蓋安裝。由 app/build.gradle 讀 KEFU_ANDROID_KEYSTORE;
+      # 不能只放 ~/.android/debug.keystore(AGP 在 CI 不讀那裡,v0.1.0 因此是每次隨機產生的簽章)
+      - name: 共用簽章 keystore
         if: env.DEBUG_KS_B64 != ''
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ~/.android
-          printf '%s' "$DEBUG_KS_B64" | base64 -d > ~/.android/debug.keystore
-          echo "已寫入 ~/.android/debug.keystore"
+          ks="$RUNNER_TEMP/kefu-android.p12"
+          printf '%s' "$DEBUG_KS_B64" | base64 -d > "$ks"
+          echo "KEFU_ANDROID_KEYSTORE=$ks" >> "$GITHUB_ENV"
 
       - name: assembleDebug
         working-directory: frontend/android
+        env:
+          KEFU_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
         run: |
           chmod +x ./gradlew           # 從 Windows commit 或 zip 搬過來會掉執行權限
           ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 檢查簽章
+        if: env.DEBUG_KS_B64 != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
+          actual=$("$apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk |
+            awk -F': ' '/Signer #1 certificate SHA-256 digest/{print $2}')
+          echo "APK 簽章憑證 SHA-256:$actual"
+          if [ "$actual" != "$ANDROID_CERT_SHA256" ]; then
+            echo "::error title=簽章::APK 不是用共用 keystore 簽的(預期 $ANDROID_CERT_SHA256),新版將無法覆蓋安裝"
+            exit 1
+          fi
 
       - name: 整理產物
         run: cp android/app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/kefu-android-debug.apk"
@@ -173,8 +193,11 @@ jobs:
           trap collect EXIT
           ls -la "$GITHUB_WORKSPACE/pkg"
           adb logcat -c || true
+          # 快取的模擬器裡可能還留著舊建置(簽章可能不同,覆蓋安裝會失敗、接著測到的是舊版):先移除,
+          # 並以 adb install 的結果判斷成功,不能只看套件存在
+          adb uninstall "$pkg" > /dev/null 2>&1 || true
           adb install -r -g "$apk" 2>&1 | tee "$out/install.log"
-          adb shell pm list packages | grep -q "$pkg" || { echo "安裝失敗:找不到 $pkg"; exit 1; }
+          grep -q '^Success' "$out/install.log" || { echo "安裝失敗(見 install.log)"; exit 1; }
           act=$(adb shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER "$pkg" | tr -d '\r' | tail -n 1)
           echo "launcher activity: $act" | tee "$out/start.log"
           if [[ "$act" == */* ]]; then
@@ -314,8 +337,11 @@ jobs:
             fi
           }
           trap collect EXIT
+          # 快取的模擬器裡可能還留著舊建置(簽章可能不同,覆蓋安裝會失敗、接著測到的是舊版):先移除,
+          # 並以 adb install 的結果判斷成功,不能只看套件存在
+          adb uninstall "$pkg" > /dev/null 2>&1 || true
           adb install -r -g "$apk" 2>&1 | tee "$out/install.log"
-          adb shell pm list packages | grep -q "$pkg" || { echo "安裝失敗:找不到 $pkg"; exit 1; }
+          grep -q '^Success' "$out/install.log" || { echo "安裝失敗(見 install.log)"; exit 1; }
           maestro --version | tee "$out/maestro-version.txt"
           # 剛開機的模擬器上系統程式(常見是 Pixel Launcher)容易 ANR,「isn't responding」框會蓋住 App
           # (曾兩次重跑都被擋)。關掉系統錯誤對話框:ANR 時系統改為直接重啟該程式,不再跳框

@@ -44,7 +44,7 @@ cd backend && uv sync --locked --extra dev && uv run --no-sync pytest -q
 |---|---|---|
 | Windows | `.exe`(NSIS)/ `.msi` | 未簽章:SmartScreen 出現時按「其他資訊 → 仍要執行」 |
 | macOS | `.dmg` | ad-hoc 簽章:首次開啟到「系統設定 → 隱私權與安全性」按「強制打開」 |
-| Android | `.apk` | 允許「安裝未知來源的應用程式」後安裝 |
+| Android | `.apk` | 允許「安裝未知來源的應用程式」後安裝;從 v0.1.0 升級需先解除安裝一次(簽章不同) |
 | iOS | 模擬器 `.zip`、未簽章 `.ipa` | `.ipa` 以 Sideloadly / AltStore 用 Apple ID 重新簽章安裝 |
 
 本機只需 Node 22+ 做前端檢查:`cd frontend && npm ci && npm run lint && npm run build:native`;原生編譯(Rust、Gradle、Xcode)一律在 CI 進行。端到端登入測試見 [e2e/README.md](e2e/README.md)。
