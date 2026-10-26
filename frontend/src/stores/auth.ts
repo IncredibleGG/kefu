@@ -41,6 +41,18 @@ interface AuthState {
 const EMPTY_ROLES: string[] = [];
 export const selectRoles = (s: AuthState): string[] => s.staff?.roles ?? EMPTY_ROLES;
 
+/**
+ * 後端換發 access token(自助改密 / 本人於 IAM 改密 / 2FA 啟用或停用):伺服器已撤銷變更前
+ * 簽發的所有 token,本次 session 改用新 token 續用,並讓即時連線以新 token 重連。
+ * 回應未帶 token(mock / 舊版伺服器 / 管理員改他人密碼)則不動作。
+ */
+export function adoptRotatedToken(token: string | null | undefined): void {
+  if (!token) return;
+  setToken(token);
+  useAuth.setState({ token });
+  agentSocket.refreshToken();
+}
+
 /* --------------------------- 推播裝置登記標記 --------------------------- */
 /** usePushRegistration 成功 POST /devices 後呼叫;登出時據此撤銷。 */
 export function markDeviceRegistered(): void {

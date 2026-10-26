@@ -17,6 +17,7 @@ import {
   slaApi,
   visitorApi,
 } from "./endpoints";
+import { adoptRotatedToken } from "@/stores/auth";
 import type { Canned, Message, SessionTab } from "@/types";
 
 export const qk = {
@@ -214,6 +215,8 @@ export function useChangePassword() {
   return useMutation({
     mutationFn: (i: { old_password: string; new_password: string }) =>
       authApi.changePassword(i.old_password, i.new_password),
+    // 改密後伺服器撤銷所有舊 token(其他裝置需重新登入),本次 session 改用回應中的新 token
+    onSuccess: (res) => adoptRotatedToken(res?.access_token),
   });
 }
 
@@ -346,6 +349,8 @@ export function useStaffMutations() {
   });
   const setPassword = useMutation({
     mutationFn: (i: { id: string; password: string }) => iamApi.setStaffPassword(i.id, i.password),
+    // 改的是自己的密碼時後端回新 token(舊 token 已撤銷);改他人密碼不回
+    onSuccess: (res) => adoptRotatedToken(res?.access_token),
   });
   const setStatus = useMutation({
     mutationFn: (i: { id: string; status: string }) => iamApi.setStaffStatus(i.id, i.status),

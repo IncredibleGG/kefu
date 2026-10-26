@@ -121,6 +121,9 @@ export function getDeviceId(): string;               // 穩定 UUID,存在原生
 | `DELETE /api/v1/devices/{device_id}` | 只能撤銷自己的;登出時**先呼叫這個再清 token** |
 | `GET /api/v1/devices` | 列出自己的裝置(不回 token;`include_revoked=true` 含已撤銷) |
 | `POST /api/v1/auth/sso/exchange` | `{code, code_verifier}` → 與登入成功相同的 `{access_token, token_type, staff_id, is_platform_admin}` |
+| `POST /api/v1/auth/change-password`、`POST /api/v1/iam/staff/{自己的 id}/password`、`POST /api/v1/auth/2fa/enable`、`POST /api/v1/auth/2fa/disable` | 成功時回應另帶新的 `access_token`、`token_type`(冪等呼叫,即 2FA 已是目標狀態時不帶)。伺服器已撤銷變更前簽發的**所有** token(含本次請求用的那個),客戶端須立刻改用新 token(寫回 `kefu-token` / 原生儲存),並以新 token 重連 `/ws/agent`。管理員改**他人**密碼、公開的 `reset-password` 不回 token |
+
+**Token 撤銷(`tv` claim)**:access token 帶 `tv`(= `Staff.token_version`)。改密(自助 / 忘記密碼重設 / 管理員改密 / 接受邀請設密)、2FA 啟用 / 停用 / 組織強制綁定完成時,版本 +1;此後 `tv` 不符的 token 一律 401(`detail: "session revoked"`),`/ws/agent` 則 4401(見 4.2)。發起變更的 session 以回應中的新 token 續用,其他裝置需重新登入。本機制上線前簽發、不帶 `tv` 的 token 視為版本 0:照常可用到過期(最長 24 小時),但該坐席一旦版本變動即失效。撤銷檢查時 DB 故障一律放行(與既有帳號 / 租戶撤銷相同)。
 
 **原生 SSO(PKCE)**:`GET /api/v1/auth/oauth/google/start?client=native&redirect_uri=kefu://auth/callback&state=<app_state>&code_challenge=<b64url>&code_challenge_method=S256`;回呼成功 302 到 `kefu://auth/callback?code=…&state=…`(code 一次性、60 秒),失敗 `?sso_error=…&state=…`。`redirect_uri` 必須與 `KEFU_NATIVE_REDIRECT_URIS`(預設 `kefu://auth/callback`)**完全相等**。Web 流程同時補上 OAuth `state`(防 login CSRF)。SAML `GET /api/v1/saml/login/{slug}` 接受同樣參數。
 
@@ -128,7 +131,8 @@ export function getDeviceId(): string;               // 穩定 UUID,存在原生
 
 ### 4.2 WebSocket `/ws/agent?token=&session_id=&device_id=&platform=`
 
-- 認證失敗(缺 token、token 無效/過期、帳號停用/刪除、租戶停用)→ **先 accept 再 `close(4401)`**,客戶端才看得到原因;客戶端收到 4401 走登出流程、不再重連。**連線期間**伺服器約每 60 秒複查一次(帳號撤銷 / 租戶停用 / JWT 過期),不通過同樣 `close(4401)`;複查時 DB 故障則放行(同 REST)。
+- 認證失敗(缺 token、token 無效/過期、帳號停用/刪除、租戶停用、token 已被撤銷——`tv` 與 `Staff.token_version` 不符,見 4.1)→ **先 accept 再 `close(4401)`**,客戶端才看得到原因;客戶端收到 4401 走登出流程、不再重連。**連線期間**伺服器約每 60 秒複查一次(帳號撤銷 / 租戶停用 / token 撤銷 / JWT 過期),不通過同樣 `close(4401)`;複查時 DB 故障則放行(同 REST)。
+- 本機已換發新 token(改密 / 2FA 變更的回應帶 `access_token`)時,客戶端主動以新 token 重連;若仍先收到舊連線的 4401(該連線所用 token ≠ 目前儲存的 token),改以新 token 立即重連,**不**走登出流程。
 - 伺服器端事件轉發中斷(例如 Redis 訂閱失敗)→ `close(1011)`,客戶端依退避重連並重新訂閱;連線至少維持 5 秒才關,避免 Redis 持續故障時每秒重連打爆 DB。`/ws/widget` 同樣處理。
 - 客戶端 `{"type":"ping"}`(純文字 JSON frame)→ 伺服器 `{"type":"pong","payload":{},"ts":…}`;客戶端每 25 秒 ping,**收過至少一次 pong 之後**才啟用「10 秒沒 pong 視為斷線重連」(舊版伺服器不回 pong,不會被誤判)。
 - 客戶端 `{"type":"app_state","payload":{"foreground":true|false}}`。
