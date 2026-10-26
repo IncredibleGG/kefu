@@ -119,8 +119,9 @@ jobs:
 
       # 共用簽章:同一把 key 新版才能直接覆蓋安裝。由 app/build.gradle 讀 KEFU_ANDROID_KEYSTORE;
       # 不能只放 ~/.android/debug.keystore(AGP 在 CI 不讀那裡,v0.1.0 因此是每次隨機產生的簽章)
-      # keystore 是之後每一版的長期簽章身分:secret 只給這一步(npm ci / vite / cap sync 等第三方程式碼讀不到),
-      # 之後的步驟只看得到檔案路徑 KEFU_ANDROID_KEYSTORE
+      # keystore 是之後每一版的長期簽章身分。secret 只給這一步,前面的 npm ci / vite / cap sync 環境裡沒有;
+      # 但 assembleDebug 會在同一個 Gradle 行程執行 node_modules 裡 Capacitor 外掛的建置腳本,它們看得到
+      # 密碼與 keystore 檔(在 Gradle 內簽章就無法避免,只能信任這些依賴)。檔名隨機,建置完立刻刪除。
       - name: 共用簽章 keystore
         shell: bash
         env:
@@ -136,7 +137,7 @@ jobs:
             echo "::error title=簽章::有 ANDROID_DEBUG_KEYSTORE_B64 卻沒有 ANDROID_DEBUG_KEYSTORE_PASSWORD"
             exit 1
           fi
-          ks="$RUNNER_TEMP/kefu-android.p12"
+          ks=$(mktemp -p "$RUNNER_TEMP" kefu-XXXXXXXX.p12)
           printf '%s' "$DEBUG_KS_B64" | base64 -d > "$ks"
           echo "KEFU_ANDROID_KEYSTORE=$ks" >> "$GITHUB_ENV"
 
@@ -147,6 +148,11 @@ jobs:
         run: |
           chmod +x ./gradlew           # 從 Windows commit 或 zip 搬過來會掉執行權限
           ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 刪除 keystore
+        if: always()
+        shell: bash
+        run: if [ -n "${KEFU_ANDROID_KEYSTORE:-}" ]; then rm -f "$KEFU_ANDROID_KEYSTORE"; fi
 
       - name: 檢查簽章
         shell: bash
