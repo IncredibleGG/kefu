@@ -62,7 +62,7 @@ jobs:
     env:
       GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
       # 共用簽章憑證的 SHA-256(公開資訊);有 keystore secret 時,建出來的 APK 必須是這張憑證
-      ANDROID_CERT_SHA256: 54f4556af45dbe879d79b00d1794b34ed8cc4468838ce7432eef78e09d9dfdd5
+      ANDROID_CERT_SHA256: f0b183e37751ca98ada19decfbdd9bf325139a5013a9cf914d95c57575a61876
     steps:
       - uses: actions/checkout@v7
         with:
@@ -147,7 +147,8 @@ jobs:
       - name: assembleDebug
         working-directory: frontend/android
         env:
-          KEFU_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          # 只有可發佈的建置拿得到密碼(PR / 其他分支本來就不簽正式版)
+          KEFU_ANDROID_KEYSTORE_PASSWORD: ${{ (github.ref_type == 'tag' || github.ref == 'refs/heads/main') && secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD || '' }}
         run: |
           chmod +x ./gradlew           # 從 Windows commit 或 zip 搬過來會掉執行權限
           ./gradlew assembleDebug --no-daemon --stacktrace
