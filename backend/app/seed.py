@@ -2,10 +2,14 @@
 
 Run:  python -m app.seed
 Idempotent-ish: skips if the demo tenant slug already exists.
+
+The admin password comes from KEFU_DEMO_ADMIN_PASSWORD; when it is not set a random
+one is generated and printed once. The repo is public, so never commit a real password here.
 """
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
 
 from sqlalchemy import select
@@ -18,7 +22,6 @@ from app.models.tenancy import Tenant
 from app.services.iam import seed_default_permissions
 
 DEMO_EMAIL = "admin@demo.local"
-DEMO_PASSWORD = "admin12345"
 
 
 async def main() -> None:
@@ -28,6 +31,8 @@ async def main() -> None:
         if exists:
             print("demo tenant already seeded")
             return
+
+        password = os.environ.get("KEFU_DEMO_ADMIN_PASSWORD") or secrets.token_urlsafe(12)
 
         tenant = Tenant(name="Demo Co", slug="demo", is_active=True)
         db.add(tenant)
@@ -44,7 +49,7 @@ async def main() -> None:
         staff = Staff(
             tenant_id=tenant.id,
             email=DEMO_EMAIL,
-            password_hash=hash_password(DEMO_PASSWORD),
+            password_hash=hash_password(password),
             display_name="Demo Admin",
             status="offline",
             is_active=True,
@@ -73,7 +78,10 @@ async def main() -> None:
             )
         )
         await db.commit()
-        print(f"seeded demo tenant={tenant.id}  login: {DEMO_EMAIL} / {DEMO_PASSWORD}")
+        if os.environ.get("KEFU_DEMO_ADMIN_PASSWORD"):
+            print(f"seeded demo tenant={tenant.id}  login: {DEMO_EMAIL} (password from KEFU_DEMO_ADMIN_PASSWORD)")
+        else:
+            print(f"seeded demo tenant={tenant.id}  login: {DEMO_EMAIL} / {password}")
 
 
 if __name__ == "__main__":

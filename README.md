@@ -28,7 +28,10 @@ AI 原生、可多租戶白牌轉售的客服平台(乾淨室自研)。全渠道
 cp .env.example .env          # 填 KEFU_OPENAI_API_KEY;正式環境務必改 KEFU_JWT_SECRET
 docker compose up -d          # postgres(pgvector)+ redis + backend + 前端 + widget
 curl localhost:18000/health   # 後端;坐席工作台在 http://localhost:18090
+docker compose exec backend python -m app.seed   # 建 demo 租戶,印出 admin@demo.local 的隨機密碼
 ```
+
+要指定 demo 管理員密碼時,執行 seed 加 `-e KEFU_DEMO_ADMIN_PASSWORD=…`。repo 是公開的,不要把任何真的密碼寫進程式碼或文件。
 
 後端測試(與 CI 相同):
 
