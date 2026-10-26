@@ -1,7 +1,7 @@
 apply plugin: 'com.android.application'
 
 // 共用簽章:同一把 key 簽的新版才能直接覆蓋安裝。CI 以 KEFU_ANDROID_KEYSTORE(PKCS12,alias kefu)指定;
-// 沒設時(本機開發、fork 的 PR)沿用 AGP 預設的 debug keystore。
+// 沒設時(本機開發、所有 PR 與非 main 分支的 CI 建置)沿用 AGP 預設的 debug keystore。
 // 要明確指定,不能只把檔案放到 ~/.android/debug.keystore:CI 上 AGP 不讀那裡,每次建置都自己產生一把新的。
 def sharedKeystore = System.getenv("KEFU_ANDROID_KEYSTORE")
 
