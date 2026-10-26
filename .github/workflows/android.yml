@@ -1,7 +1,10 @@
 # Android(Capacitor 8):debug APK(未上架、可直接安裝)+ 模擬器冒煙測試。
 # 選填 secrets:
 #   GOOGLE_SERVICES_JSON_B64     google-services.json 的 base64(沒有時推播不會運作,但建置照樣成功)
-#   ANDROID_DEBUG_KEYSTORE_B64   固定的 debug.keystore base64(讓每次建置簽章相同,新版才能覆蓋安裝)
+#   ANDROID_DEBUG_KEYSTORE_B64       共用簽章 keystore(PKCS12、alias kefu)的 base64
+#   ANDROID_DEBUG_KEYSTORE_PASSWORD  它的密碼
+#   兩者讓每次建置簽章相同,新版才能覆蓋安裝;憑證指紋固定在下方 ANDROID_CERT_SHA256。
+#   tag 與 main 的建置沒有 keystore 會直接失敗(不可發佈隨機簽章的 APK);PR(含 fork)只警告。
 name: android
 
 on:
@@ -30,6 +33,8 @@ on:
       GOOGLE_SERVICES_JSON_B64:
         required: false
       ANDROID_DEBUG_KEYSTORE_B64:
+        required: false
+      ANDROID_DEBUG_KEYSTORE_PASSWORD:
         required: false
 
 concurrency:
@@ -133,13 +138,22 @@ jobs:
           ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: 檢查簽章
-        if: env.DEBUG_KS_B64 != ''
         shell: bash
         run: |
           set -euo pipefail
+          if [ -z "$DEBUG_KS_B64" ]; then
+            # 沒有 keystore 時 APK 是 AGP 隨機產生的簽章:可發佈的建置一律擋下,PR(含 fork)只警告
+            if [ "$GITHUB_REF_TYPE" = tag ] || [ "$GITHUB_REF" = refs/heads/main ]; then
+              echo "::error title=簽章::缺少 ANDROID_DEBUG_KEYSTORE_B64,APK 會是隨機簽章,不可發佈"
+              exit 1
+            fi
+            echo "::warning title=簽章::沒有共用 keystore,這次的 APK 是隨機簽章(無法覆蓋安裝其他版本)"
+            exit 0
+          fi
           apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n 1)
-          actual=$("$apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk |
-            awk -F': ' '/Signer #1 certificate SHA-256 digest/{print $2}')
+          # 各版 apksigner 的前綴不同(「Signer #1 …」或「Signer (minSdkVersion=…) …」),只比對後半段
+          "$apksigner" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee "$RUNNER_TEMP/apk-certs.txt"
+          actual=$(awk -F': ' '/certificate SHA-256 digest/{print $2; exit}' "$RUNNER_TEMP/apk-certs.txt")
           echo "APK 簽章憑證 SHA-256:$actual"
           if [ "$actual" != "$ANDROID_CERT_SHA256" ]; then
             echo "::error title=簽章::APK 不是用共用 keystore 簽的(預期 $ANDROID_CERT_SHA256),新版將無法覆蓋安裝"

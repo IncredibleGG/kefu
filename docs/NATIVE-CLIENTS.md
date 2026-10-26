@@ -150,7 +150,7 @@ export function getDeviceId(): string;               // 穩定 UUID,存在原生
 
 - **Tauri**:視窗 1280×800、最小 380×560(窄於 768px 自動套手機版面);`backgroundThrottling: disabled`;關閉視窗 = 縮到系統匣,系統匣選單「結束」才真正退出;single-instance(第一個註冊,含 deep-link);window-state;macOS ad-hoc 簽章 `signingIdentity: "-"`;CSP 允許 `connect-src https: wss:`、`img-src https: data: blob:`。
 - **Capacitor**:`android.minWebViewVersion: 111` + `errorPath: "webview-too-old.html"`;iOS deployment target 16.4;Keyboard resize native;註冊 `kefu://`;推播權限在登入後請求;Android 返回鍵順序:關最上層浮層 → 頁面覆寫(`setBackOverride`,例如伺服器設定頁開著時只關設定頁、絕不移動背後隱藏的 router)→ 有上一頁(react-router `history.state.idx > 0`)才 `history.back()` → 縮小 App。原生 SSO 的 PKCE 暫存(verifier/state)存 localStorage、5 分鐘有效、用過即清,以撐過系統在瀏覽器登入期間回收 App。
-- **Android 簽章**:CI 用共用 keystore(PKCS12、alias `kefu`;secrets `ANDROID_DEBUG_KEYSTORE_B64` / `ANDROID_DEBUG_KEYSTORE_PASSWORD`),`app/build.gradle` 由 `KEFU_ANDROID_KEYSTORE` 指定,建置後檢查憑證 SHA-256(`android.yml` 的 `ANDROID_CERT_SHA256`),不符就失敗。同一把 key 新版才能直接覆蓋安裝;v0.1.0 是 AGP 每次隨機產生的簽章,從 v0.1.0 升級要先解除安裝一次。
+- **Android 簽章**:CI 用共用 keystore(PKCS12、alias `kefu`;secrets `ANDROID_DEBUG_KEYSTORE_B64` / `ANDROID_DEBUG_KEYSTORE_PASSWORD`),`app/build.gradle` 由 `KEFU_ANDROID_KEYSTORE` 指定,建置後檢查憑證 SHA-256(`android.yml` 的 `ANDROID_CERT_SHA256`),不符就失敗;tag 與 main 缺 keystore secret 也直接失敗,PR(含 fork)只警告。同一把 key 新版才能直接覆蓋安裝;v0.1.0 是 AGP 每次隨機產生的簽章,從 v0.1.0 升級要先解除安裝一次。
 
 ## 6. CI / 產物
 
